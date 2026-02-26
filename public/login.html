@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion - Al Kawthar</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-page">
+    <div class="login-container">
+        <a href="/home.html" class="back-link">
+            <i class="fas fa-arrow-left"></i> Retour à la sélection
+        </a>
+        
+        <img src="https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552" alt="Logo École">
+        
+        <div class="section-badge" id="sectionBadge">
+            <i class="fas fa-user-graduate" id="sectionIcon"></i>
+            <span id="sectionName">Section</span>
+        </div>
+        
+        <h2>Connexion Enseignant</h2>
+        <form id="loginForm">
+            <div class="input-group">
+                <label for="username"><i class="fas fa-user"></i> Nom d'utilisateur</label>
+                <input type="text" id="username" name="username" required autocomplete="username" placeholder="Entrez votre nom">
+            </div>
+            <div class="input-group">
+                <label for="password"><i class="fas fa-lock"></i> Mot de passe</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Entrez votre mot de passe">
+                <i class="fas fa-eye password-toggle-icon" id="togglePassword"></i>
+            </div>
+
+            <div class="options">
+                <label for="rememberMe" class="checkbox-label">
+                    <input type="checkbox" id="rememberMe" name="rememberMe" value="true">
+                    <span>Rester connecté (14 jours)</span>
+                </label>
+            </div>
+
+            <button type="submit" class="login-btn">
+                <i class="fas fa-sign-in-alt"></i>
+                <span>Se Connecter</span>
+            </button>
+            <p id="errorMessage" class="error-message"></p>
+        </form>
+    </div>
+
+    <script>
+        // Gérer la section
+        const urlParams = new URLSearchParams(window.location.search);
+        const section = urlParams.get('section') || 'boys';
+        
+        const sectionBadge = document.getElementById('sectionBadge');
+        const sectionName = document.getElementById('sectionName');
+        
+        if (section === 'girls') {
+            document.body.classList.add('girls-section');
+            sectionName.textContent = 'Section Filles';
+        } else {
+            document.body.classList.add('boys-section');
+            sectionName.textContent = 'Section Garçons';
+        }
+        
+        // Toggle password visibility
+        document.getElementById('togglePassword').addEventListener('click', function() {
+            const passwordInput = document.getElementById('password');
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            this.classList.toggle('fa-eye-slash');
+        });
+        
+        // Formulaire de login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const rememberMe = document.getElementById('rememberMe').checked;
+            
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, section, rememberMe })
+                });
+                
+                if (response.ok) {
+                    window.location.href = '/dashboard.html';
+                } else {
+                    document.getElementById('errorMessage').textContent = 'Login ou mot de passe incorrect.';
+                    document.getElementById('errorMessage').classList.add('show');
+                    setTimeout(() => document.getElementById('errorMessage').classList.remove('show'), 4000);
+                }
+            } catch (error) {
+                document.getElementById('errorMessage').textContent = 'Erreur de connexion. Veuillez réessayer.';
+                document.getElementById('errorMessage').classList.add('show');
+            }
+        });
+    </script>
+</body>
+</html>
