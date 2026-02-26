@@ -1,0 +1,30 @@
+{
+  "name": "gestion-notes-vercel",
+  "version": "2.0.0",
+  "description": "Application de gestion de notes - Dual Section (Garçons/Filles)",
+  "main": "api/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node api/index.js",
+    "dev": "node api/index.js",
+    "vercel-build": "echo 'Build complete'"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "body-parser": "^1.20.2",
+    "connect-mongo": "^5.1.0",
+    "docxtemplater": "^3.47.2",
+    "docxtemplater-image-module-free": "^1.1.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "jszip": "^3.10.1",
+    "mongoose": "^8.4.1",
+    "pizzip": "^3.1.7",
+    "socket.io": "^4.7.5",
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

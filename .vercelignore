@@ -1,0 +1,9 @@
+node_modules
+.git
+.env
+*.log
+*.md
+test-server.js
+api/index-with-socketio.js
+api/index.js.backup
+public/styles-old.css

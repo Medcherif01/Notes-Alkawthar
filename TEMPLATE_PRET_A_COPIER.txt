@@ -1,0 +1,219 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║               COPIER-COLLER CE CONTENU DANS WORD                     ║
+║                  (Version Minimale et Prête)                         ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+═══════════════════════════════════════════════════════════════════════
+                    ÉCOLE AL KAWTHAR INTERNATIONAL
+                         BULLETIN DE NOTES
+═══════════════════════════════════════════════════════════════════════
+
+CLASSE: {className}
+SEMESTRE: {semesterDisplay}
+
+═══════════════════════════════════════════════════════════════════════
+
+
+{#subjects}
+
+──────────────────────────────────────────────────────────────────────
+MATIÈRE: {subjectName}
+ENSEIGNANT: {assignedTeacher}
+──────────────────────────────────────────────────────────────────────
+
+[À REMPLACER PAR UN TABLEAU WORD - Voir instructions ci-dessous]
+
+
+{/subjects}
+
+
+═══════════════════════════════════════════════════════════════════════
+                      FIN DU BULLETIN - {className}
+═══════════════════════════════════════════════════════════════════════
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                   INSTRUCTIONS POUR LE TABLEAU                       ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+1. Dans Word, supprimez la ligne "[À REMPLACER PAR UN TABLEAU WORD...]"
+
+2. À cet endroit, insérez un tableau:
+   • Aller dans: Insertion → Tableau
+   • Choisir: 6 colonnes, 3 lignes
+
+3. Remplissez le tableau comme ceci:
+
+┌─────────────────┬────────────────┬─────────┬────────────┬────────┬─────────┐
+│ Ligne 1 (En-tête du tableau):                                             │
+├─────────────────┼────────────────┼─────────┼────────────┼────────┼─────────┤
+│ Nom de l'élève  │ Travaux Classe │ Devoirs │ Évaluation │ Examen │  Total  │
+├─────────────────┴────────────────┴─────────┴────────────┴────────┴─────────┤
+│ Ligne 2 (Coller cette ligne ENTIÈRE dans une cellule fusionnée):          │
+│ {#students}                                                                │
+├─────────────────┬────────────────┬─────────┬────────────┬────────┬─────────┤
+│ Ligne 3 (Données - remplir chaque cellule):                               │
+├─────────────────┼────────────────┼─────────┼────────────┼────────┼─────────┤
+│ {studentName}   │{travauxClasse} │{devoirs}│{evaluation}│{examen}│ {total} │
+├─────────────────┴────────────────┴─────────┴────────────┴────────┴─────────┤
+│ Ligne 4 (Coller cette ligne ENTIÈRE dans une cellule fusionnée):          │
+│ {/students}                                                                │
+└────────────────────────────────────────────────────────────────────────────┘
+
+4. IMPORTANT: Les lignes {#students} et {/students} doivent être dans 
+   des cellules fusionnées (fusionner les 6 colonnes pour ces lignes)
+
+5. Le résultat final dans Word doit ressembler à:
+
+   ┌──────────────┬─────────────┬────────┬───────────┬───────┬────────┐
+   │ Nom élève    │ Travaux Cl. │Devoirs │Évaluation │Examen │ Total  │
+   ├──────────────┴─────────────┴────────┴───────────┴───────┴────────┤
+   │ {#students}                                                        │
+   ├──────────────┬─────────────┬────────┬───────────┬───────┬────────┤
+   │{studentName} │{travauxClasse}│{devoirs}│{evaluation}│{examen}│{total}│
+   ├──────────────┴─────────────┴────────┴───────────┴───────┴────────┤
+   │ {/students}                                                        │
+   └────────────────────────────────────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                       ALTERNATIVE SIMPLE                             ║
+║                  (Si fusion de cellules difficile)                   ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Si fusionner les cellules est compliqué, vous pouvez faire comme ça:
+
+1. Créer un tableau simple avec 6 colonnes
+
+2. Juste AVANT le tableau, écrivez: {#students}
+
+3. Dans la première ligne du tableau (après l'en-tête), mettez:
+   {studentName} | {travauxClasse} | {devoirs} | {evaluation} | {examen} | {total}
+
+4. Juste APRÈS le tableau, écrivez: {/students}
+
+Exemple:
+
+MATIÈRE: {subjectName}
+ENSEIGNANT: {assignedTeacher}
+
+{#students}
+
+┌──────────────┬─────────────┬────────┬───────────┬───────┬────────┐
+│ Nom élève    │ Travaux Cl. │Devoirs │Évaluation │Examen │ Total  │
+├──────────────┼─────────────┼────────┼───────────┼───────┼────────┤
+│{studentName} │{travauxClasse}│{devoirs}│{evaluation}│{examen}│{total}│
+└──────────────┴─────────────┴────────┴───────────┴───────┴────────┘
+
+{/students}
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                    LISTE DES BALISES (MÉMENTO)                       ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Niveau Document:
+  {className}         → Nom de la classe
+  {semesterDisplay}   → Semestre (S1/S2)
+
+Niveau Matière (dans {#subjects}...{/subjects}):
+  {subjectName}       → Nom de la matière
+  {assignedTeacher}   → Nom de l'enseignant
+
+Niveau Élève (dans {#students}...{/students}):
+  {studentName}       → Nom de l'élève
+  {travauxClasse}     → Note travaux
+  {devoirs}           → Note devoirs
+  {evaluation}        → Note évaluation
+  {examen}            → Note examen
+  {total}             → Total /100
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                      CHECKLIST FINALE                                ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Avant d'enregistrer votre template Word, vérifiez:
+
+☐ {className} est présent en haut du document
+☐ {semesterDisplay} est présent en haut du document
+☐ {#subjects} est présent (ouvre la boucle matières)
+☐ {subjectName} est présent dans la boucle subjects
+☐ {assignedTeacher} est présent dans la boucle subjects
+☐ {#students} est présent (ouvre la boucle élèves)
+☐ {studentName} est dans le tableau
+☐ {travauxClasse} est dans le tableau
+☐ {devoirs} est dans le tableau
+☐ {evaluation} est dans le tableau
+☐ {examen} est dans le tableau
+☐ {total} est dans le tableau
+☐ {/students} est présent (ferme la boucle élèves)
+☐ {/subjects} est présent (ferme la boucle matières)
+☐ Toutes les balises ont leurs accolades { }
+☐ Pas de fautes de frappe dans les noms de balises
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                    ERREURS COURANTES À ÉVITER                        ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+❌ FAUX:
+   {ClassName}          → Majuscule incorrecte
+   {StudentName}        → Majuscule incorrecte
+   {Travaux Classe}     → Espace au lieu de camelCase
+   {#student}           → Singulier au lieu de students
+   {subjects}           → Manque le # pour ouvrir la boucle
+   {#subjects           → Manque l'accolade fermante
+   subjects}            → Manque l'accolade ouvrante
+
+✅ CORRECT:
+   {className}          → Bon format
+   {studentName}        → Bon format
+   {travauxClasse}      → Bon format camelCase
+   {#students}          → Pluriel avec #
+   {#subjects}          → Avec # et accolades
+   {/subjects}          → Avec / et accolades
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                      ENREGISTRER LE FICHIER                          ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+1. Fichier → Enregistrer sous
+
+2. Choisir le format: Document Word (.docx)
+
+3. Nom suggéré: template_notes_alkawthar.docx
+
+4. Enregistrer dans un emplacement sûr
+
+5. Uploader le fichier sur votre serveur (par exemple Glitch, CDN, etc.)
+
+6. Mettre à jour l'URL dans le code (api/index.js, ligne 419):
+   const templateURL = 'VOTRE_NOUVELLE_URL_ICI';
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║                   TESTER VOTRE TEMPLATE                              ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Pour tester si votre template fonctionne:
+
+1. Uploadez-le sur votre CDN/serveur
+2. Mettez à jour l'URL dans api/index.js
+3. Connectez-vous à l'application
+4. Ajoutez quelques notes de test
+5. Cliquez sur "Générer Word"
+6. Ouvrez le fichier généré
+7. Vérifiez que toutes les données sont présentes
+
+
+═══════════════════════════════════════════════════════════════════════
+                      FIN DU DOCUMENT
+═══════════════════════════════════════════════════════════════════════
+
+Pour plus de détails, consultez:
+  • TEMPLATE_WORD_GUIDE.md (guide complet)
+  • EXEMPLE_TEMPLATE_WORD.txt (exemples détaillés)
+  • GUIDE_RAPIDE_TEMPLATE.txt (guide visuel)
