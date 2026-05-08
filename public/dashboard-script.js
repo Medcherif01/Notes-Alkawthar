@@ -387,10 +387,11 @@ async function handleFormSubmit(e) {
         subject: subject,
         studentName: studentName,
         semester: currentSemester,
-        travauxClasse: travauxClasseInput.value === '' ? null : parseFloat(travauxClasseInput.value),
-        devoirs: devoirsInput.value === '' ? null : parseFloat(devoirsInput.value),
-        evaluation: evaluationInput.value === '' ? null : parseFloat(evaluationInput.value),
-        examen: examenInput.value === '' ? null : parseFloat(examenInput.value)
+        // Conserver la valeur exacte saisie (String) pour éviter les arrondis flottants
+        travauxClasse: travauxClasseInput.value === '' ? null : String(travauxClasseInput.value),
+        devoirs: devoirsInput.value === '' ? null : String(devoirsInput.value),
+        evaluation: evaluationInput.value === '' ? null : String(evaluationInput.value),
+        examen: examenInput.value === '' ? null : String(examenInput.value)
     };
     
     // Vérifier s'il s'agit d'une mise à jour ou d'une création
@@ -554,18 +555,22 @@ function displayNotesTable(notes) {
     `;
     
     notes.forEach(note => {
-        const tc = note.travauxClasse ?? '';
-        const dev = note.devoirs ?? '';
-        const eva = note.evaluation ?? '';
-        const exam = note.examen ?? '';
+        // Les valeurs sont des String ou null — afficher vide si null/vide
+        const tc = (note.travauxClasse != null && note.travauxClasse !== '') ? note.travauxClasse : '';
+        const dev = (note.devoirs != null && note.devoirs !== '') ? note.devoirs : '';
+        const eva = (note.evaluation != null && note.evaluation !== '') ? note.evaluation : '';
+        const exam = (note.examen != null && note.examen !== '') ? note.examen : '';
         
-        let total = 0;
-        if (tc !== '') total += parseFloat(tc);
-        if (dev !== '') total += parseFloat(dev);
-        if (eva !== '') total += parseFloat(eva);
-        if (exam !== '') total += parseFloat(exam);
-        
-        const totalDisplay = (tc === '' && dev === '' && eva === '' && exam === '') ? '' : total.toFixed(2);
+        const hasAny = tc !== '' || dev !== '' || eva !== '' || exam !== '';
+        let totalDisplay = '';
+        if (hasAny) {
+            const total = (tc !== '' ? parseFloat(tc) : 0) +
+                          (dev !== '' ? parseFloat(dev) : 0) +
+                          (eva !== '' ? parseFloat(eva) : 0) +
+                          (exam !== '' ? parseFloat(exam) : 0);
+            // Afficher sans zéros inutiles
+            totalDisplay = String(parseFloat(total.toFixed(4)));
+        }
         
         // Checkbox "Saisi" - toujours visible et modifiable
         const enteredChecked = note.enteredInSystem ? 'checked' : '';
@@ -578,22 +583,11 @@ function displayNotesTable(notes) {
             approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin('${note._id}', this.checked)" title="Approuver"></td>`;
         }
         
-        // Inputs éditables inline pour les notes
-        const tcInput = `<input type="number" value="${tc}" placeholder="-" min="0" step="0.01" 
-            onchange="updateNoteField('${note._id}', 'travauxClasse', this.value)" 
-            style="width: 60px; padding: 0.3rem; border: 1px solid #ddd; border-radius: 4px; text-align: center;">`;
-        
-        const devInput = `<input type="number" value="${dev}" placeholder="-" min="0" step="0.01" 
-            onchange="updateNoteField('${note._id}', 'devoirs', this.value)" 
-            style="width: 60px; padding: 0.3rem; border: 1px solid #ddd; border-radius: 4px; text-align: center;">`;
-        
-        const evaInput = `<input type="number" value="${eva}" placeholder="-" min="0" step="0.01" 
-            onchange="updateNoteField('${note._id}', 'evaluation', this.value)" 
-            style="width: 60px; padding: 0.3rem; border: 1px solid #ddd; border-radius: 4px; text-align: center;">`;
-        
-        const examInput = `<input type="number" value="${exam}" placeholder="-" min="0" step="0.01" 
-            onchange="updateNoteField('${note._id}', 'examen', this.value)" 
-            style="width: 60px; padding: 0.3rem; border: 1px solid #ddd; border-radius: 4px; text-align: center;">`;
+        // Inputs éditables inline — step="any" pour conserver la valeur exacte
+        const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'travauxClasse', this.value)">`;
+        const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'devoirs',      this.value)">`;
+        const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'evaluation',   this.value)">`;
+        const examInput = `<input type="number" value="${exam}" placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'examen',       this.value)">`;
         
         tableHTML += `
             <tr id="note-row-${note._id}">
@@ -677,8 +671,8 @@ window.toggleApprovedByAdmin = async function(noteId, isApproved) {
 // MODIFICATION INLINE DES NOTES
 // ====================================
 window.updateNoteField = async function(noteId, field, value) {
-    // Convertir valeur vide en null
-    const cleanValue = value === '' || value === null ? null : parseFloat(value);
+    // Conserver la valeur exacte saisie (String) pour éviter les arrondis flottants
+    const cleanValue = (value === '' || value === null || value === undefined) ? null : String(value);
     
     const updateData = {};
     updateData[field] = cleanValue;
@@ -696,7 +690,7 @@ window.updateNoteField = async function(noteId, field, value) {
             // Mettre à jour le total localement sans recharger toute la page
             const note = allNotesData.find(n => n._id === noteId);
             if (note) {
-                note[field] = cleanValue;
+                note[field] = cleanValue; // cleanValue est String ou null
                 updateTotal(noteId, note);
             }
         } else {
@@ -713,21 +707,21 @@ window.updateNoteField = async function(noteId, field, value) {
 
 // Fonction pour mettre à jour le total d'une note
 function updateTotal(noteId, note) {
-    let total = 0;
-    const tc = note.travauxClasse ?? 0;
-    const dev = note.devoirs ?? 0;
-    const eva = note.evaluation ?? 0;
-    const exam = note.examen ?? 0;
+    // Les valeurs sont des String ou null
+    const tc = (note.travauxClasse != null && note.travauxClasse !== '') ? parseFloat(note.travauxClasse) : null;
+    const dev = (note.devoirs != null && note.devoirs !== '') ? parseFloat(note.devoirs) : null;
+    const eva = (note.evaluation != null && note.evaluation !== '') ? parseFloat(note.evaluation) : null;
+    const exam = (note.examen != null && note.examen !== '') ? parseFloat(note.examen) : null;
     
-    // Ne calculer que si au moins une note existe
-    const hasAnyNote = note.travauxClasse !== null || note.devoirs !== null || 
-                       note.evaluation !== null || note.examen !== null;
+    const hasAnyNote = tc !== null || dev !== null || eva !== null || exam !== null;
     
+    let totalDisplay = '';
     if (hasAnyNote) {
-        total = tc + dev + eva + exam;
+        const total = (tc ?? 0) + (dev ?? 0) + (eva ?? 0) + (exam ?? 0);
+        // Afficher sans zéros inutiles: 26 reste 26, pas 26.00
+        totalDisplay = String(parseFloat(total.toFixed(4)));
     }
     
-    const totalDisplay = hasAnyNote ? total.toFixed(2) : '';
     const totalElement = document.getElementById(`total-${noteId}`);
     if (totalElement) {
         totalElement.textContent = totalDisplay;

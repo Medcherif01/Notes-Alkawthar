@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Al Kawthar - Sélection de Section</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body class="home-page">
@@ -12,20 +12,25 @@
         <span></span><span></span><span></span><span></span><span></span>
         <span></span><span></span><span></span><span></span><span></span>
     </div>
-    
+
     <div class="selector-container">
-        <img src="https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552" alt="Logo Al Kawthar" class="logo">
-        
-        <h1>Bienvenue à Al Kawthar International School</h1>
-        <p class="subtitle">Veuillez sélectionner votre section</p>
+        <img src="https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552"
+             alt="Logo Al Kawthar" class="logo">
+
+        <h1>Al Kawthar International School</h1>
+        <p class="subtitle">
+            <i class="fas fa-book-open" style="margin-right:0.4rem;opacity:0.8;"></i>
+            Système de gestion des notes — Sélectionnez votre section
+        </p>
 
         <div class="section-cards">
+            <!-- Carte Garçons -->
             <div class="section-card boys" onclick="window.location.href='/login.html?section=boys'">
                 <div class="icon-wrapper">
-                    <i class="fas fa-user-graduate section-icon"></i>
+                    <i class="fas fa-mars section-icon"></i>
                 </div>
                 <h2 class="section-title">Section Garçons</h2>
-                <p class="section-description">Gestion des notes et suivi académique</p>
+                <p class="section-description">Saisie &amp; gestion des notes académiques</p>
                 <div class="stats">
                     <div class="stat-item">
                         <i class="fas fa-users"></i>
@@ -33,21 +38,22 @@
                     </div>
                     <div class="stat-item">
                         <i class="fas fa-chalkboard-teacher"></i>
-                        <span>8 Enseignants</span>
+                        <span>Enseignants</span>
                     </div>
                 </div>
                 <button class="section-btn">
+                    <i class="fas fa-sign-in-alt"></i>
                     <span>Accéder</span>
-                    <i class="fas fa-arrow-right"></i>
                 </button>
             </div>
 
+            <!-- Carte Filles -->
             <div class="section-card girls" onclick="window.location.href='/login.html?section=girls'">
                 <div class="icon-wrapper">
-                    <i class="fas fa-user-graduate section-icon"></i>
+                    <i class="fas fa-venus section-icon"></i>
                 </div>
                 <h2 class="section-title">Section Filles</h2>
-                <p class="section-description">Gestion des notes et suivi académique</p>
+                <p class="section-description">Saisie &amp; gestion des notes académiques</p>
                 <div class="stats">
                     <div class="stat-item">
                         <i class="fas fa-users"></i>
@@ -55,15 +61,19 @@
                     </div>
                     <div class="stat-item">
                         <i class="fas fa-chalkboard-teacher"></i>
-                        <span>12 Enseignantes</span>
+                        <span>Enseignantes</span>
                     </div>
                 </div>
                 <button class="section-btn">
+                    <i class="fas fa-sign-in-alt"></i>
                     <span>Accéder</span>
-                    <i class="fas fa-arrow-right"></i>
                 </button>
             </div>
         </div>
+
+        <p style="color:rgba(255,255,255,0.3);font-size:0.78rem;margin-top:3rem;letter-spacing:0.5px;">
+            © 2025 Al Kawthar International School — Tous droits réservés
+        </p>
     </div>
 </body>
 </html>

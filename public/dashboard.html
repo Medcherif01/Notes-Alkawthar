@@ -3,40 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Al Kawthar - Gestion des Notes</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="/style.css">
+    <title>Al Kawthar — Gestion des Notes</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/dashboard-styles.css">
 </head>
 <body>
-    <!-- Progress Bar Moderne -->
+
+    <!-- ===== BARRE DE PROGRESSION ===== -->
     <div id="progress-container" class="modern-progress">
         <div class="progress-content">
-            <i class="fas fa-spinner fa-spin"></i>
-            <span>Génération en cours...</span>
-        </div>
-        <div class="progress-bar-wrapper">
-            <div class="progress-bar" id="progressBar"></div>
+            <i class="fas fa-cog fa-spin"></i>
+            <span>Génération du document en cours...</span>
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
         </div>
     </div>
 
-    <!-- Header Moderne et Professionnel -->
+    <!-- ===== HEADER ===== -->
     <header class="modern-header">
         <div class="header-left">
             <div class="logo-section">
-                <img src="https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552" alt="Logo École" class="header-logo">
+                <img src="https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552"
+                     alt="Logo" class="header-logo">
                 <div class="title-section">
                     <h1 class="main-title">
-                        <i class="fas fa-chart-line"></i>
+                        <i class="fas fa-graduation-cap"></i>
                         Gestion des Notes
                     </h1>
                     <div class="section-badge-header" id="sectionIndicator">
-                        <i class="fas fa-graduation-cap"></i>
-                        <span id="dashboardSectionName">Section</span>
+                        <i class="fas fa-circle" style="font-size:0.55rem;"></i>
+                        <span id="dashboardSectionName">Chargement...</span>
                     </div>
                 </div>
             </div>
         </div>
+
         <div class="header-right">
             <div class="user-card">
                 <i class="fas fa-user-circle"></i>
@@ -46,11 +48,11 @@
                 </div>
             </div>
             <div class="action-buttons">
-                <button id="generateWordButton" class="action-btn word-btn" title="Générer Word par classe">
+                <button id="generateWordButton" class="action-btn word-btn" title="Générer Word">
                     <i class="fas fa-file-word"></i>
                     <span>Word</span>
                 </button>
-                <button id="generateExcelButton" class="action-btn excel-btn" title="Générer Excel complet">
+                <button id="generateExcelButton" class="action-btn excel-btn" title="Générer Excel">
                     <i class="fas fa-file-excel"></i>
                     <span>Excel</span>
                 </button>
@@ -62,105 +64,99 @@
         </div>
     </header>
 
-    <!-- Sélecteur de Semestre Moderne -->
+    <!-- ===== SÉLECTEUR DE SEMESTRE ===== -->
     <div class="semester-selector-modern" id="semesterSelectorContainer">
         <div class="semester-header">
             <i class="fas fa-calendar-alt"></i>
-            <h3>Période Académique</h3>
+            <h3>Choisissez la Période</h3>
         </div>
         <div class="semester-buttons">
             <button id="semester1Button" class="semester-btn" data-semester="S1">
-                <i class="fas fa-bookmark"></i>
+                <i class="fas fa-calendar-check"></i>
                 <span class="semester-label">Semestre 1</span>
-                <span class="semester-dates">Sept - Jan</span>
+                <span class="semester-dates">Septembre — Janvier</span>
             </button>
             <button id="semester2Button" class="semester-btn" data-semester="S2">
-                <i class="fas fa-bookmark"></i>
+                <i class="fas fa-calendar-check"></i>
                 <span class="semester-label">Semestre 2</span>
-                <span class="semester-dates">Fév - Juin</span>
+                <span class="semester-dates">Février — Juin</span>
             </button>
         </div>
     </div>
 
-    <!-- Conteneur Principal Moderne -->
+    <!-- ===== CONTENEUR PRINCIPAL ===== -->
     <div class="main-container-modern" id="mainContainer" data-print-semester="" style="display: none;">
+
+        <!-- Formulaire de saisie -->
         <div class="section-card-modern form-section">
             <div class="card-header">
                 <h2 id="formTitle">
-                    <i class="fas fa-pen-fancy"></i>
+                    <i class="fas fa-pen-nib"></i>
                     <span>Saisie des Notes</span>
                     <span class="semester-tag">Semestre ?</span>
                 </h2>
             </div>
 
             <form id="noteForm" class="modern-form">
+                <!-- Sélecteurs classe / matière / élève -->
                 <div class="form-grid">
                     <div class="form-group">
                         <label for="class">
-                            <i class="fas fa-school"></i>
-                            <span>Classe</span>
+                            <i class="fas fa-school"></i> Classe
                         </label>
                         <select id="class" required class="modern-select">
-                            <option value="">-- Sélectionner une classe --</option>
+                            <option value="">— Sélectionner une classe —</option>
                         </select>
                     </div>
-
                     <div class="form-group">
                         <label for="subject">
-                            <i class="fas fa-book"></i>
-                            <span>Matière</span>
+                            <i class="fas fa-book"></i> Matière
                         </label>
                         <select id="subject" required class="modern-select">
-                            <option value="">-- Sélectionner une matière --</option>
+                            <option value="">— Sélectionner une matière —</option>
                         </select>
                     </div>
-
                     <div class="form-group">
                         <label for="studentName">
-                            <i class="fas fa-user-graduate"></i>
-                            <span>Élève</span>
+                            <i class="fas fa-user-graduate"></i> Élève
                         </label>
                         <select id="studentName" required class="modern-select">
-                            <option value="">-- Sélectionner un élève --</option>
+                            <option value="">— Sélectionner un élève —</option>
                         </select>
                     </div>
                 </div>
 
+                <!-- Grille de notes -->
                 <div class="notes-grid">
                     <div class="note-card">
-                        <div class="note-icon blue">
-                            <i class="fas fa-clipboard-list"></i>
-                        </div>
+                        <div class="note-icon blue"><i class="fas fa-clipboard-list"></i></div>
                         <label for="travauxClasse">Travaux Classe</label>
-                        <input type="number" id="travauxClasse" placeholder="Max: -" min="0" step="0.01" class="modern-input">
+                        <input type="number" id="travauxClasse" placeholder="Max: —" min="0" step="any" class="modern-input">
                     </div>
                     <div class="note-card">
-                        <div class="note-icon green">
-                            <i class="fas fa-tasks"></i>
-                        </div>
+                        <div class="note-icon green"><i class="fas fa-tasks"></i></div>
                         <label for="devoirs">Devoirs</label>
-                        <input type="number" id="devoirs" placeholder="Max: -" min="0" step="0.01" class="modern-input">
+                        <input type="number" id="devoirs" placeholder="Max: —" min="0" step="any" class="modern-input">
                     </div>
                     <div class="note-card">
-                        <div class="note-icon orange">
-                            <i class="fas fa-file-signature"></i>
-                        </div>
+                        <div class="note-icon orange"><i class="fas fa-file-signature"></i></div>
                         <label for="evaluation">Évaluation</label>
-                        <input type="number" id="evaluation" placeholder="Max: -" min="0" step="0.01" class="modern-input">
+                        <input type="number" id="evaluation" placeholder="Max: —" min="0" step="any" class="modern-input">
                     </div>
                     <div class="note-card">
-                        <div class="note-icon red">
-                            <i class="fas fa-certificate"></i>
-                        </div>
+                        <div class="note-icon red"><i class="fas fa-award"></i></div>
                         <label for="examen">Examen</label>
-                        <input type="number" id="examen" placeholder="Max: -" min="0" step="0.01" class="modern-input">
+                        <input type="number" id="examen" placeholder="Max: —" min="0" step="any" class="modern-input">
                     </div>
                 </div>
+
+                <!-- Messages -->
                 <div class="message-container">
                     <div class="error-message" id="formErrorMessage"></div>
                     <div class="success-message-modern" id="formSuccessMessage"></div>
                 </div>
 
+                <!-- Boutons -->
                 <div class="form-actions">
                     <button type="submit" class="submit-btn">
                         <i class="fas fa-save"></i>
@@ -169,9 +165,9 @@
                     <div class="auto-progress-modern" id="autoProgressInfo" style="display: none;">
                         <div class="next-student-info">
                             <i class="fas fa-arrow-circle-right"></i>
-                            <span id="nextStudentName"></span>
+                            <span id="nextStudentName">Prochain élève</span>
                         </div>
-                        <button type="button" id="skipToNextButton" class="skip-btn" title="Passer à l'élève suivant">
+                        <button type="button" id="skipToNextButton" class="skip-btn">
                             <i class="fas fa-forward"></i>
                             <span>Passer</span>
                         </button>
@@ -180,38 +176,29 @@
             </form>
         </div>
 
-        <!-- Section des Filtres Moderne -->
+        <!-- Filtres -->
         <div class="section-card-modern filters-section">
             <div class="card-header">
                 <h3>
-                    <i class="fas fa-filter"></i>
-                    <span>Filtres Avancés</span>
+                    <i class="fas fa-sliders-h"></i>
+                    <span>Filtres de Recherche</span>
                 </h3>
             </div>
             <div class="filters-grid">
                 <div class="filter-item">
-                    <label>
-                        <i class="fas fa-school"></i>
-                        <span>Classe</span>
-                    </label>
+                    <label><i class="fas fa-school"></i> Classe</label>
                     <select id="sortClass" class="modern-select">
                         <option value="">Toutes les Classes</option>
                     </select>
                 </div>
                 <div class="filter-item">
-                    <label>
-                        <i class="fas fa-book"></i>
-                        <span>Matière</span>
-                    </label>
+                    <label><i class="fas fa-book"></i> Matière</label>
                     <select id="sortSubject" class="modern-select">
                         <option value="">Toutes les Matières</option>
                     </select>
                 </div>
                 <div class="filter-item">
-                    <label>
-                        <i class="fas fa-user-graduate"></i>
-                        <span>Élève</span>
-                    </label>
+                    <label><i class="fas fa-user-graduate"></i> Élève</label>
                     <select id="sortStudent" class="modern-select">
                         <option value="">Tous les Élèves</option>
                     </select>
@@ -219,7 +206,7 @@
             </div>
         </div>
 
-        <!-- Section Tableau Moderne -->
+        <!-- Tableau des notes -->
         <div class="section-card-modern table-section">
             <div class="card-header">
                 <h3>
@@ -228,23 +215,19 @@
                 </h3>
                 <div class="bulk-actions" id="bulkActionsContainer" style="display: none;">
                     <div class="bulk-group">
-                        <button id="setAllEnteredButton" class="bulk-btn entered-btn" title="Cocher tous les 'Saisi'">
-                            <i class="fas fa-check-double"></i>
-                            <span>Tout Saisi</span>
+                        <button id="setAllEnteredButton" class="bulk-btn entered-btn">
+                            <i class="fas fa-check-double"></i><span>Tout Saisi</span>
                         </button>
-                        <button id="unsetAllEnteredButton" class="bulk-btn unentered-btn" title="Décocher tous les 'Saisi'">
-                            <i class="fas fa-times-circle"></i>
-                            <span>Tout Non Saisi</span>
+                        <button id="unsetAllEnteredButton" class="bulk-btn unentered-btn">
+                            <i class="fas fa-times-circle"></i><span>Tout Non Saisi</span>
                         </button>
                     </div>
                     <div class="bulk-group" id="approvedButtonsGroup">
-                        <button id="setAllApprovedButton" class="bulk-btn approved-btn" title="Cocher tous les 'Approuvé'">
-                            <i class="fas fa-check-circle"></i>
-                            <span>Tout Approuvé</span>
+                        <button id="setAllApprovedButton" class="bulk-btn approved-btn">
+                            <i class="fas fa-check-circle"></i><span>Tout Approuvé</span>
                         </button>
-                        <button id="unsetAllApprovedButton" class="bulk-btn unapproved-btn" title="Décocher tous les 'Approuvé'">
-                            <i class="fas fa-ban"></i>
-                            <span>Tout Désapprouvé</span>
+                        <button id="unsetAllApprovedButton" class="bulk-btn unapproved-btn">
+                            <i class="fas fa-ban"></i><span>Tout Désapprouvé</span>
                         </button>
                     </div>
                 </div>
@@ -253,7 +236,8 @@
                 <div class="output-modern" id="output"></div>
             </div>
         </div>
-    </div>
+
+    </div><!-- fin main-container -->
 
     <script src="/dashboard-script.js"></script>
 </body>

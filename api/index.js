@@ -46,7 +46,8 @@ async function connectToDatabase() {
 app.set('trust proxy', 1);
 
 // Session avec MongoStore pour persistance
-// Session permanente jusqu'à déconnexion manuelle (pas de limite de temps)
+// Session permanente jusqu'à déconnexion manuelle
+const SESSION_MAX_AGE = 10 * 365 * 24 * 60 * 60 * 1000; // 10 ans en millisecondes
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
@@ -55,14 +56,14 @@ app.use(session({
         mongoUrl: MONGO_URL,
         dbName: 'test',
         collectionName: 'sessions',
-        ttl: 10 * 365 * 24 * 60 * 60, // 10 ans (permanent jusqu'à déconnexion manuelle)
+        ttl: 10 * 365 * 24 * 60 * 60, // 10 ans en secondes
         autoRemove: 'native',
         touchAfter: 24 * 3600 // Mise à jour lazy toutes les 24h
     }),
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
-        maxAge: null, // Pas de limite - session permanente jusqu'à déconnexion
+        maxAge: SESSION_MAX_AGE, // 10 ans - persist même après fermeture du navigateur
         sameSite: 'lax'
     }
 }));
@@ -77,14 +78,15 @@ const NoteSchema = new mongoose.Schema({
     subject: String,
     studentName: String,
     semester: { type: String, required: true, enum: ['S1', 'S2'] },
-    section: { type: String, required: false, enum: ['boys', 'girls'], default: 'boys' }, // Section (non requis pour compatibilité)
-    travauxClasse: { type: Number, default: null },
-    devoirs: { type: Number, default: null },
-    evaluation: { type: Number, default: null },
-    examen: { type: Number, default: null },
+    section: { type: String, required: false, enum: ['boys', 'girls'], default: 'boys' },
+    // Stocker les notes comme String pour conserver la valeur exacte saisie par l'enseignant
+    travauxClasse: { type: String, default: null },
+    devoirs: { type: String, default: null },
+    evaluation: { type: String, default: null },
+    examen: { type: String, default: null },
     teacher: { type: String },
-    approvedByAdmin: { type: Boolean, default: false }, // NOUVEAU: Approuvé par l'admin
-    enteredInSystem: { type: Boolean, default: false }, // NOUVEAU: Saisi dans le système de l'école
+    approvedByAdmin: { type: Boolean, default: false },
+    enteredInSystem: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });
@@ -234,8 +236,8 @@ app.post('/login', (req, res) => {
         req.session.user = username;
         req.session.section = userSection;
         
-        // Session permanente - pas de limite de temps, persiste jusqu'à déconnexion manuelle
-        req.session.cookie.maxAge = null; // Pas de limite
+        // Session permanente - persiste même après fermeture du navigateur
+        req.session.cookie.maxAge = SESSION_MAX_AGE;
         
         console.log(`✅ Login successful for user: ${username} in section: ${userSection}`);
         res.status(200).json({ success: true, message: 'Connexion réussie' });
@@ -323,10 +325,10 @@ app.post('/save-notes', requireAuth, sectionMiddleware, async (req, res) => {
         }
         const note = new Note({
             class: studentClass, subject, studentName, semester, section,
-            travauxClasse: travauxClasse === '' ? null : Number(travauxClasse),
-            devoirs: devoirs === '' ? null : Number(devoirs),
-            evaluation: evaluation === '' ? null : Number(evaluation),
-            examen: examen === '' ? null : Number(examen),
+            travauxClasse: (travauxClasse === '' || travauxClasse === null || travauxClasse === undefined) ? null : String(travauxClasse),
+            devoirs: (devoirs === '' || devoirs === null || devoirs === undefined) ? null : String(devoirs),
+            evaluation: (evaluation === '' || evaluation === null || evaluation === undefined) ? null : String(evaluation),
+            examen: (examen === '' || examen === null || examen === undefined) ? null : String(examen),
             teacher,
             approvedByAdmin: false,
             enteredInSystem: false,
@@ -354,9 +356,15 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
         }
         const cleanData = {};
         ['travauxClasse', 'devoirs', 'evaluation', 'examen'].forEach(field => {
-            const value = updatedData[field];
-            if (value === '' || value === null) cleanData[field] = null;
-            else if (!isNaN(parseFloat(value))) cleanData[field] = parseFloat(value);
+            if (updatedData.hasOwnProperty(field)) {
+                const value = updatedData[field];
+                if (value === '' || value === null || value === undefined) {
+                    cleanData[field] = null;
+                } else {
+                    // Conserver la valeur exacte saisie par l'enseignant (String)
+                    cleanData[field] = String(value);
+                }
+            }
         });
         
         // Permettre la mise à jour des statuts (admin et enseignant)
@@ -490,14 +498,25 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
                 assignedTeacher: getAssignedTeacher(subjectName, className, req.sectionData.teacherPermissions),
                 students: classStudentList.map(studentName => {
                     const note = notesByClass[className].find(n => n.studentName === studentName && n.subject === subjectName);
-                    const total = (note?.travauxClasse ?? 0) + (note?.devoirs ?? 0) + (note?.evaluation ?? 0) + (note?.examen ?? 0);
+                    // Conserver les valeurs exactes saisies (String), laisser vide si null
+                    const tc = (note?.travauxClasse != null && note.travauxClasse !== '') ? note.travauxClasse : '';
+                    const dev = (note?.devoirs != null && note.devoirs !== '') ? note.devoirs : '';
+                    const eva = (note?.evaluation != null && note.evaluation !== '') ? note.evaluation : '';
+                    const exam = (note?.examen != null && note.examen !== '') ? note.examen : '';
+                    // Calcul du total en parseFloat pour additionner correctement
+                    const tcNum = tc !== '' ? parseFloat(tc) : 0;
+                    const devNum = dev !== '' ? parseFloat(dev) : 0;
+                    const evaNum = eva !== '' ? parseFloat(eva) : 0;
+                    const examNum = exam !== '' ? parseFloat(exam) : 0;
+                    const hasAny = tc !== '' || dev !== '' || eva !== '' || exam !== '';
+                    const total = hasAny ? (tcNum + devNum + evaNum + examNum) : null;
                     return {
                         studentName,
-                        travauxClasse: note?.travauxClasse ?? "",
-                        devoirs: note?.devoirs ?? "",
-                        evaluation: note?.evaluation ?? "",
-                        examen: note?.examen ?? "",
-                        total: note ? total.toFixed(2) : ""
+                        travauxClasse: tc,
+                        devoirs: dev,
+                        evaluation: eva,
+                        examen: exam,
+                        total: total !== null ? String(parseFloat(total.toFixed(4))) : ""
                     };
                 })
             }));
@@ -552,11 +571,22 @@ app.post('/generate-excel', requireAuth, sectionMiddleware, async (req, res) => 
             ];
             classNotes.sort((a,b) => a.studentName.localeCompare(b.studentName) || a.subject.localeCompare(b.subject))
             .forEach(note => {
-                const total = (note.travauxClasse ?? 0) + (note.devoirs ?? 0) + (note.evaluation ?? 0) + (note.examen ?? 0);
+                // Conserver valeurs exactes (String), laisser vide si null
+                const tc = (note.travauxClasse != null && note.travauxClasse !== '') ? note.travauxClasse : '';
+                const dev = (note.devoirs != null && note.devoirs !== '') ? note.devoirs : '';
+                const eva = (note.evaluation != null && note.evaluation !== '') ? note.evaluation : '';
+                const exam = (note.examen != null && note.examen !== '') ? note.examen : '';
+                const hasAny = tc !== '' || dev !== '' || eva !== '' || exam !== '';
+                let totalDisplay = '';
+                if (hasAny) {
+                    const t = (tc !== '' ? parseFloat(tc) : 0) + (dev !== '' ? parseFloat(dev) : 0) +
+                              (eva !== '' ? parseFloat(eva) : 0) + (exam !== '' ? parseFloat(exam) : 0);
+                    totalDisplay = String(parseFloat(t.toFixed(4)));
+                }
                 wsData.push([
                     note.class, note.subject, note.studentName,
-                    note.travauxClasse ?? '', note.devoirs ?? '', note.evaluation ?? '', note.examen ?? '',
-                    total ? total.toFixed(2) : '', 
+                    tc, dev, eva, exam,
+                    totalDisplay,
                     note.teacher || '', 
                     getAssignedTeacher(note.subject, note.class, req.sectionData.teacherPermissions),
                     note.enteredInSystem ? 'Oui' : 'Non',
