@@ -2,6 +2,20 @@
 // GESTION DU DASHBOARD - Version Séparée
 // ====================================
 
+// ============================================================
+// NORMALISATION CÔTÉ CLIENT
+// Traite 0 (Number), "0", "0.0", null, undefined, "" → ''
+// Conserve toute autre valeur comme String exact
+// ============================================================
+function normalizeVal(val) {
+    if (val === null || val === undefined || val === '') return '';
+    const str = String(val).trim();
+    if (str === '') return '';
+    const num = parseFloat(str);
+    if (isNaN(num) || num === 0) return '';
+    return str;
+}
+
 // Variables globales
 let currentSemester = null;
 let allNotesData = [];
@@ -327,11 +341,11 @@ function loadExistingNotesForStudent() {
     );
     
     if (existingNote) {
-        // Remplir les champs avec les notes existantes
-        travauxClasseInput.value = existingNote.travauxClasse !== null ? existingNote.travauxClasse : '';
-        devoirsInput.value = existingNote.devoirs !== null ? existingNote.devoirs : '';
-        evaluationInput.value = existingNote.evaluation !== null ? existingNote.evaluation : '';
-        examenInput.value = existingNote.examen !== null ? existingNote.examen : '';
+        // Remplir les champs avec les notes existantes — normalizeVal() traite 0 → vide
+        travauxClasseInput.value = normalizeVal(existingNote.travauxClasse);
+        devoirsInput.value       = normalizeVal(existingNote.devoirs);
+        evaluationInput.value    = normalizeVal(existingNote.evaluation);
+        examenInput.value        = normalizeVal(existingNote.examen);
         
         // Stocker l'ID de la note pour permettre la mise à jour
         document.getElementById('noteForm').setAttribute('data-note-id', existingNote._id);
@@ -382,16 +396,21 @@ async function handleFormSubmit(e) {
         return;
     }
     
+    // normalizeVal: 0, "0", "", null → null (case vide). Sinon String exact.
+    const tcVal   = normalizeVal(travauxClasseInput.value);
+    const devVal  = normalizeVal(devoirsInput.value);
+    const evaVal  = normalizeVal(evaluationInput.value);
+    const examVal = normalizeVal(examenInput.value);
+
     const noteData = {
         class: selectedClass,
         subject: subject,
         studentName: studentName,
         semester: currentSemester,
-        // Conserver la valeur exacte saisie (String) pour éviter les arrondis flottants
-        travauxClasse: travauxClasseInput.value === '' ? null : String(travauxClasseInput.value),
-        devoirs: devoirsInput.value === '' ? null : String(devoirsInput.value),
-        evaluation: evaluationInput.value === '' ? null : String(evaluationInput.value),
-        examen: examenInput.value === '' ? null : String(examenInput.value)
+        travauxClasse: tcVal   === '' ? null : tcVal,
+        devoirs:       devVal  === '' ? null : devVal,
+        evaluation:    evaVal  === '' ? null : evaVal,
+        examen:        examVal === '' ? null : examVal
     };
     
     // Vérifier s'il s'agit d'une mise à jour ou d'une création
@@ -555,20 +574,19 @@ function displayNotesTable(notes) {
     `;
     
     notes.forEach(note => {
-        // Les valeurs sont des String ou null — afficher vide si null/vide
-        const tc = (note.travauxClasse != null && note.travauxClasse !== '') ? note.travauxClasse : '';
-        const dev = (note.devoirs != null && note.devoirs !== '') ? note.devoirs : '';
-        const eva = (note.evaluation != null && note.evaluation !== '') ? note.evaluation : '';
-        const exam = (note.examen != null && note.examen !== '') ? note.examen : '';
-        
+        // normalizeVal() : 0, "0", null, "" → '' (case vide)
+        const tc   = normalizeVal(note.travauxClasse);
+        const dev  = normalizeVal(note.devoirs);
+        const eva  = normalizeVal(note.evaluation);
+        const exam = normalizeVal(note.examen);
+
         const hasAny = tc !== '' || dev !== '' || eva !== '' || exam !== '';
         let totalDisplay = '';
         if (hasAny) {
-            const total = (tc !== '' ? parseFloat(tc) : 0) +
-                          (dev !== '' ? parseFloat(dev) : 0) +
-                          (eva !== '' ? parseFloat(eva) : 0) +
+            const total = (tc   !== '' ? parseFloat(tc)   : 0) +
+                          (dev  !== '' ? parseFloat(dev)  : 0) +
+                          (eva  !== '' ? parseFloat(eva)  : 0) +
                           (exam !== '' ? parseFloat(exam) : 0);
-            // Afficher sans zéros inutiles
             totalDisplay = String(parseFloat(total.toFixed(4)));
         }
         
@@ -583,7 +601,7 @@ function displayNotesTable(notes) {
             approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin('${note._id}', this.checked)" title="Approuver"></td>`;
         }
         
-        // Inputs éditables inline — step="any" pour conserver la valeur exacte
+        // Inputs éditables inline — valeurs normalisées, vide si 0/null
         const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'travauxClasse', this.value)">`;
         const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'devoirs',      this.value)">`;
         const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'evaluation',   this.value)">`;
@@ -671,8 +689,9 @@ window.toggleApprovedByAdmin = async function(noteId, isApproved) {
 // MODIFICATION INLINE DES NOTES
 // ====================================
 window.updateNoteField = async function(noteId, field, value) {
-    // Conserver la valeur exacte saisie (String) pour éviter les arrondis flottants
-    const cleanValue = (value === '' || value === null || value === undefined) ? null : String(value);
+    // normalizeVal: 0, "0", "", null → null (case vide). Sinon String exact.
+    const normalized = normalizeVal(value);
+    const cleanValue = normalized === '' ? null : normalized;
     
     const updateData = {};
     updateData[field] = cleanValue;
@@ -707,11 +726,15 @@ window.updateNoteField = async function(noteId, field, value) {
 
 // Fonction pour mettre à jour le total d'une note
 function updateTotal(noteId, note) {
-    // Les valeurs sont des String ou null
-    const tc = (note.travauxClasse != null && note.travauxClasse !== '') ? parseFloat(note.travauxClasse) : null;
-    const dev = (note.devoirs != null && note.devoirs !== '') ? parseFloat(note.devoirs) : null;
-    const eva = (note.evaluation != null && note.evaluation !== '') ? parseFloat(note.evaluation) : null;
-    const exam = (note.examen != null && note.examen !== '') ? parseFloat(note.examen) : null;
+    // normalizeVal() : 0, "0", null → '' → pas compté dans le total
+    const tcStr   = normalizeVal(note.travauxClasse);
+    const devStr  = normalizeVal(note.devoirs);
+    const evaStr  = normalizeVal(note.evaluation);
+    const examStr = normalizeVal(note.examen);
+    const tc   = tcStr   !== '' ? parseFloat(tcStr)   : null;
+    const dev  = devStr  !== '' ? parseFloat(devStr)  : null;
+    const eva  = evaStr  !== '' ? parseFloat(evaStr)  : null;
+    const exam = examStr !== '' ? parseFloat(examStr) : null;
     
     const hasAnyNote = tc !== null || dev !== null || eva !== null || exam !== null;
     

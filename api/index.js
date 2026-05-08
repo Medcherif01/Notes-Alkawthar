@@ -150,6 +150,32 @@ function sectionMiddleware(req, res, next) {
     next();
 }
 
+// ====================================================
+// NORMALISATION DES NOTES
+// Convertit 0 (Number), "0", null, undefined, ""  → null
+// Conserve toute autre valeur comme String exact
+// ====================================================
+function normalizeNoteValue(val) {
+    if (val === null || val === undefined || val === '') return null;
+    const str = String(val).trim();
+    if (str === '' || str === '0' || str === '0.0' || str === '0.00') return null;
+    // Si c'est un nombre valide non nul, le garder comme String exact
+    const num = parseFloat(str);
+    if (isNaN(num)) return null;
+    if (num === 0) return null;
+    return str;
+}
+
+// Normalise un objet note (pour les notes venant de MongoDB qui ont 0 Number)
+function normalizeNote(note) {
+    const fields = ['travauxClasse', 'devoirs', 'evaluation', 'examen'];
+    const normalized = { ...note };
+    fields.forEach(f => {
+        normalized[f] = normalizeNoteValue(note[f]);
+    });
+    return normalized;
+}
+
 // Fonctions utilitaires
 function getAssignedTeacher(subject, className, teacherPermissions) {
     for (const [teacher, perms] of Object.entries(teacherPermissions)) {
@@ -301,7 +327,9 @@ app.get('/all-notes', requireAuth, sectionMiddleware, async (req, res) => {
             // Section filles: UNIQUEMENT les notes marquées 'girls' (strictement)
             query.section = 'girls';
         }
-        const notes = await Note.find(query).lean();
+        const rawNotes = await Note.find(query).lean();
+        // Normaliser toutes les notes: 0 (Number) → null → case vide
+        const notes = rawNotes.map(normalizeNote);
         console.log(`📊 Fetched ${notes.length} notes for section: ${section}, semester: ${semester}`);
         res.status(200).json(notes);
     } catch (error) {
@@ -420,7 +448,9 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
             query.section = 'girls';
         }
         query.approvedByAdmin = { $ne: true }; // Ne pas générer les notes déjà approuvées
-        const notes = await Note.find(query).lean();
+        const rawNotes = await Note.find(query).lean();
+        // Normaliser: 0 (Number) → null → case vide dans Word
+        const notes = rawNotes.map(normalizeNote);
         if (notes.length === 0) return res.status(404).send(`❌ Aucune donnée non approuvée pour le semestre ${semester}.`);
         
         const templateURL = 'https://docs.google.com/document/d/1AyBNXpuAddW0_-6rT6oQ0m0DMbNg2KHv/export?format=docx';
@@ -497,25 +527,25 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
                 subjectName: subjectName,
                 assignedTeacher: getAssignedTeacher(subjectName, className, req.sectionData.teacherPermissions),
                 students: classStudentList.map(studentName => {
-                    const note = notesByClass[className].find(n => n.studentName === studentName && n.subject === subjectName);
-                    // Conserver les valeurs exactes saisies (String), laisser vide si null
-                    const tc = (note?.travauxClasse != null && note.travauxClasse !== '') ? note.travauxClasse : '';
-                    const dev = (note?.devoirs != null && note.devoirs !== '') ? note.devoirs : '';
-                    const eva = (note?.evaluation != null && note.evaluation !== '') ? note.evaluation : '';
-                    const exam = (note?.examen != null && note.examen !== '') ? note.examen : '';
-                    // Calcul du total en parseFloat pour additionner correctement
-                    const tcNum = tc !== '' ? parseFloat(tc) : 0;
-                    const devNum = dev !== '' ? parseFloat(dev) : 0;
-                    const evaNum = eva !== '' ? parseFloat(eva) : 0;
+                    const rawNote = notesByClass[className].find(n => n.studentName === studentName && n.subject === subjectName);
+                    // normalizeNote() traite 0 (Number/String), null, "" → null → case vide
+                    const noteNorm = rawNote ? normalizeNote(rawNote) : null;
+                    const tc   = noteNorm?.travauxClasse ?? '';
+                    const dev  = noteNorm?.devoirs       ?? '';
+                    const eva  = noteNorm?.evaluation    ?? '';
+                    const exam = noteNorm?.examen        ?? '';
+                    const tcNum   = tc   !== '' ? parseFloat(tc)   : 0;
+                    const devNum  = dev  !== '' ? parseFloat(dev)  : 0;
+                    const evaNum  = eva  !== '' ? parseFloat(eva)  : 0;
                     const examNum = exam !== '' ? parseFloat(exam) : 0;
                     const hasAny = tc !== '' || dev !== '' || eva !== '' || exam !== '';
-                    const total = hasAny ? (tcNum + devNum + evaNum + examNum) : null;
+                    const total  = hasAny ? (tcNum + devNum + evaNum + examNum) : null;
                     return {
                         studentName,
                         travauxClasse: tc,
-                        devoirs: dev,
-                        evaluation: eva,
-                        examen: exam,
+                        devoirs:       dev,
+                        evaluation:    eva,
+                        examen:        exam,
                         total: total !== null ? String(parseFloat(total.toFixed(4))) : ""
                     };
                 })
@@ -556,7 +586,9 @@ app.post('/generate-excel', requireAuth, sectionMiddleware, async (req, res) => 
             query.section = 'girls';
         }
         query.approvedByAdmin = { $ne: true };
-        const notes = await Note.find(query).lean();
+        const rawNotesExcel = await Note.find(query).lean();
+        // Normaliser: 0 (Number) → null → case vide dans Excel
+        const notes = rawNotesExcel.map(normalizeNote);
         if (notes.length === 0) return res.status(404).send(`❌ Aucune note non approuvée pour la génération Excel.`);
 
         const wb = XLSX.utils.book_new();
@@ -571,16 +603,18 @@ app.post('/generate-excel', requireAuth, sectionMiddleware, async (req, res) => 
             ];
             classNotes.sort((a,b) => a.studentName.localeCompare(b.studentName) || a.subject.localeCompare(b.subject))
             .forEach(note => {
-                // Conserver valeurs exactes (String), laisser vide si null
-                const tc = (note.travauxClasse != null && note.travauxClasse !== '') ? note.travauxClasse : '';
-                const dev = (note.devoirs != null && note.devoirs !== '') ? note.devoirs : '';
-                const eva = (note.evaluation != null && note.evaluation !== '') ? note.evaluation : '';
-                const exam = (note.examen != null && note.examen !== '') ? note.examen : '';
+                // normalizeNote() déjà appliqué — null = case vide, jamais 0
+                const tc   = note.travauxClasse ?? '';
+                const dev  = note.devoirs       ?? '';
+                const eva  = note.evaluation    ?? '';
+                const exam = note.examen        ?? '';
                 const hasAny = tc !== '' || dev !== '' || eva !== '' || exam !== '';
                 let totalDisplay = '';
                 if (hasAny) {
-                    const t = (tc !== '' ? parseFloat(tc) : 0) + (dev !== '' ? parseFloat(dev) : 0) +
-                              (eva !== '' ? parseFloat(eva) : 0) + (exam !== '' ? parseFloat(exam) : 0);
+                    const t = (tc   !== '' ? parseFloat(tc)   : 0) +
+                              (dev  !== '' ? parseFloat(dev)  : 0) +
+                              (eva  !== '' ? parseFloat(eva)  : 0) +
+                              (exam !== '' ? parseFloat(exam) : 0);
                     totalDisplay = String(parseFloat(t.toFixed(4)));
                 }
                 wsData.push([
