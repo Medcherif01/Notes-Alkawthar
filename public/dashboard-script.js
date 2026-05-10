@@ -26,7 +26,8 @@ let studentsByClassGlobal = {};
 let currentStudentIndex = -1;
 let currentStudentsList = [];
 let autoProgressEnabled = false;
-let isAdmin = false; // Nouvelle variable pour vérifier si l'utilisateur est admin
+let isAdmin = false;
+let _suppressFilterChange = false; // évite les déclenchements de filterAndDisplayNotes lors des changements programmatiques
 
 // Éléments DOM
 const classSelect = document.getElementById("class");
@@ -172,13 +173,20 @@ function setupEventListeners() {
     document.getElementById("skipToNextButton").addEventListener("click", moveToNextStudent);
     document.getElementById("noteForm").addEventListener("submit", handleFormSubmit);
     
-    // Filtres
+    // Filtres — ignorés si changement programmatique (depuis les icônes)
     sortClassSelect.addEventListener("change", () => {
+        if (_suppressFilterChange) return;
         updateSortStudentOptionsForFilterClass(sortClassSelect.value);
         filterAndDisplayNotes();
     });
-    sortSubjectSelect.addEventListener("change", filterAndDisplayNotes);
-    sortStudentSelect.addEventListener("change", filterAndDisplayNotes);
+    sortSubjectSelect.addEventListener("change", () => {
+        if (_suppressFilterChange) return;
+        filterAndDisplayNotes();
+    });
+    sortStudentSelect.addEventListener("change", () => {
+        if (_suppressFilterChange) return;
+        filterAndDisplayNotes();
+    });
     
     // Boutons d'action
     generateWordButton.addEventListener("click", generateWordFiles);
@@ -205,7 +213,15 @@ function setActiveSemester(semester) {
     mainContainer.dataset.printSemester = semester;
     mainContainer.style.display = 'block';
 
+    // Reset silencieux des selects (sans déclencher filterAndDisplayNotes)
+    _suppressFilterChange = true;
     [sortClassSelect, sortSubjectSelect, sortStudentSelect, classSelect].forEach(s => s.value = "");
+    _suppressFilterChange = false;
+
+    // Réinitialiser la navigation icônes
+    iconNavClass   = null;
+    iconNavSubject = null;
+
     updateFormOnClassChange();
     fetchAndDisplayData();
 }
@@ -461,6 +477,56 @@ async function handleFormSubmit(e) {
 }
 
 // ====================================
+// ICÔNES PAR MATIÈRE (mapping FontAwesome)
+// ====================================
+const SUBJECT_ICONS = {
+    // Garçons
+    'L.L':               { icon: 'fa-book-open',         color: '#7C3AED', emoji: '📖' },
+    'I.S':               { icon: 'fa-globe-europe',       color: '#0284C7', emoji: '🌍' },
+    'Maths':             { icon: 'fa-square-root-alt',    color: '#1D4ED8', emoji: '📐' },
+    'Biologie':          { icon: 'fa-dna',                color: '#16A34A', emoji: '🧬' },
+    'Sciences':          { icon: 'fa-flask',              color: '#059669', emoji: '🔬' },
+    'Physique-Chimie':   { icon: 'fa-atom',               color: '#DC2626', emoji: '⚛️' },
+    'Design':            { icon: 'fa-drafting-compass',   color: '#EA580C', emoji: '🎨' },
+    'Anglais':           { icon: 'fa-language',           color: '#0891B2', emoji: '🗣️' },
+    'Musique':           { icon: 'fa-music',              color: '#9333EA', emoji: '🎵' },
+    'ART':               { icon: 'fa-palette',            color: '#DB2777', emoji: '🖼️' },
+    'P.E':               { icon: 'fa-running',            color: '#F97316', emoji: '🏃' },
+    'E.S':               { icon: 'fa-microscope',         color: '#0D9488', emoji: '🧪' },
+    'S.E.S':             { icon: 'fa-chart-line',         color: '#4F46E5', emoji: '📊' },
+    // Filles (noms complets)
+    'Individus et Sociétés':                          { icon: 'fa-globe-europe',     color: '#0284C7', emoji: '🌍' },
+    'Langue et Littérature':                          { icon: 'fa-book-open',        color: '#7C3AED', emoji: '📖' },
+    'Sciences Numériques et Technologiques – SNT':    { icon: 'fa-laptop-code',      color: '#1D4ED8', emoji: '💻' },
+    'Éducation Physique et Sportive – EPS':           { icon: 'fa-running',          color: '#F97316', emoji: '🏃' },
+    'Sciences Économiques et Sociales – SES':         { icon: 'fa-chart-line',       color: '#4F46E5', emoji: '📊' },
+    'Études Scientifiques – ES':                      { icon: 'fa-microscope',       color: '#0D9488', emoji: '🧪' },
+};
+
+function getSubjectIcon(subject) {
+    return SUBJECT_ICONS[subject] || { icon: 'fa-graduation-cap', color: '#64748B', emoji: '🎓' };
+}
+
+// Icônes de classes
+const CLASS_VISUAL = {
+    'PEI1': { icon: 'fa-seedling',    gradient: 'linear-gradient(135deg,#16A34A,#4ADE80)', label: 'PEI 1' },
+    'PEI2': { icon: 'fa-leaf',        gradient: 'linear-gradient(135deg,#0891B2,#38BDF8)', label: 'PEI 2' },
+    'PEI3': { icon: 'fa-star',        gradient: 'linear-gradient(135deg,#7C3AED,#A78BFA)', label: 'PEI 3' },
+    'PEI4': { icon: 'fa-fire',        gradient: 'linear-gradient(135deg,#EA580C,#FB923C)', label: 'PEI 4' },
+    'PEI5': { icon: 'fa-bolt',        gradient: 'linear-gradient(135deg,#DB2777,#F472B6)', label: 'PEI 5' },
+    'DP1':  { icon: 'fa-crown',       gradient: 'linear-gradient(135deg,#D97706,#FCD34D)', label: 'DP 1'  },
+    'DP2':  { icon: 'fa-trophy',      gradient: 'linear-gradient(135deg,#DC2626,#F87171)', label: 'DP 2'  },
+};
+
+function getClassVisual(cls) {
+    return CLASS_VISUAL[cls] || { icon: 'fa-school', gradient: 'linear-gradient(135deg,#4F46E5,#7C3AED)', label: cls };
+}
+
+// État de navigation icônes
+let iconNavClass    = null;   // classe sélectionnée dans la nav icônes
+let iconNavSubject  = null;   // matière sélectionnée dans la nav icônes
+
+// ====================================
 // RÉCUPÉRATION ET AFFICHAGE DES DONNÉES
 // ====================================
 async function fetchAndDisplayData() {
@@ -474,49 +540,338 @@ async function fetchAndDisplayData() {
         
         allNotesData = await response.json();
         console.log(`📊 ${allNotesData.length} notes chargées pour ${currentSemester}`);
-        
-        // Ne pas afficher le tableau automatiquement, attendre qu'un filtre soit appliqué
-        displayInitialMessage();
+
+        // Après rechargement des données, re-afficher selon l'état de navigation
+        if (iconNavClass && iconNavSubject) {
+            // On est dans le tableau : rafraîchir les notes affichées
+            displayNotesForSubject(iconNavClass, iconNavSubject);
+        } else if (iconNavClass) {
+            // On est dans les matières : rafraîchir les icônes matières
+            displaySubjectIcons(iconNavClass);
+        } else {
+            // Accueil : afficher les icônes de classes
+            displayClassIcons();
+        }
     } catch (error) {
         console.error('Error fetching notes:', error);
-        outputDiv.innerHTML = '<p style="color: red;">❌ Erreur lors du chargement des notes</p>';
+        outputDiv.innerHTML = '<p style="color: red; padding:2rem; text-align:center;">❌ Erreur lors du chargement des notes</p>';
     }
 }
 
-// Nouvelle fonction pour afficher un message initial
-function displayInitialMessage() {
-    outputDiv.innerHTML = `
-        <div style="text-align: center; padding: 3rem; color: #666;">
-            <i class="fas fa-filter" style="font-size: 3rem; color: #667eea; margin-bottom: 1rem;"></i>
-            <h3 style="margin-bottom: 0.5rem; color: #333;">Sélectionnez un filtre</h3>
-            <p>Utilisez les filtres ci-dessus (Classe, Matière ou Élève) pour afficher les notes.</p>
+// ====================================
+// SYSTÈME D'ICÔNES — NIVEAU 1 : CLASSES
+// ====================================
+function displayClassIcons() {
+    iconNavClass   = null;
+    iconNavSubject = null;
+
+    // Synchroniser les selects filtres (reset silencieux — sans déclencher filterAndDisplayNotes)
+    _suppressFilterChange = true;
+    sortClassSelect.value   = '';
+    sortSubjectSelect.value = '';
+    sortStudentSelect.value = '';
+    _suppressFilterChange = false;
+    currentlyDisplayedNotes = [];
+    updateBulkActionsVisibility();
+
+    const classes = currentUserPermissions.classes;
+
+    if (!classes || classes.length === 0) {
+        outputDiv.innerHTML = `<div class="icon-nav-empty"><i class="fas fa-exclamation-circle"></i><p>Aucune classe disponible.</p></div>`;
+        return;
+    }
+
+    let html = `
+        <div class="icon-nav-wrapper">
+            <div class="icon-nav-header">
+                <i class="fas fa-school"></i>
+                <span>Choisissez une classe pour consulter les notes</span>
+            </div>
+            <div class="icon-nav-grid icon-nav-classes">
+    `;
+
+    classes.forEach(cls => {
+        const v = getClassVisual(cls);
+        html += `
+            <div class="icon-nav-card class-card" onclick="displaySubjectIcons('${cls}')" title="Classe ${cls}">
+                <div class="icon-nav-bubble" style="background:${v.gradient};">
+                    <i class="fas ${v.icon}"></i>
+                </div>
+                <span class="icon-nav-label">${v.label}</span>
+            </div>
+        `;
+    });
+
+    html += `</div></div>`;
+    outputDiv.innerHTML = html;
+}
+
+// ====================================
+// SYSTÈME D'ICÔNES — NIVEAU 2 : MATIÈRES
+// ====================================
+function displaySubjectIcons(className) {
+    iconNavClass   = className;
+    iconNavSubject = null;
+
+    // Synchroniser les selects filtres silencieusement
+    _suppressFilterChange = true;
+    sortClassSelect.value   = className;
+    sortSubjectSelect.value = '';
+    sortStudentSelect.value = '';
+    _suppressFilterChange = false;
+    currentlyDisplayedNotes = [];
+    updateBulkActionsVisibility();
+
+    // Matières autorisées pour cet enseignant + cette classe
+    const allSubjectsForClass = subjectsByClassGlobal[className] || [];
+    const subjects = allSubjectsForClass.filter(s => currentUserPermissions.subjects.includes(s));
+
+    const cv = getClassVisual(className);
+
+    let html = `
+        <div class="icon-nav-wrapper">
+            <div class="icon-nav-breadcrumb">
+                <button class="icon-nav-back" onclick="displayClassIcons()">
+                    <i class="fas fa-arrow-left"></i> Toutes les classes
+                </button>
+                <span class="breadcrumb-sep"><i class="fas fa-chevron-right"></i></span>
+                <span class="breadcrumb-current" style="background:${cv.gradient};">
+                    <i class="fas ${cv.icon}"></i> ${cv.label}
+                </span>
+            </div>
+            <div class="icon-nav-header">
+                <i class="fas fa-book"></i>
+                <span>Choisissez une matière</span>
+            </div>
+            <div class="icon-nav-grid icon-nav-subjects">
+    `;
+
+    if (subjects.length === 0) {
+        html += `<div class="icon-nav-empty-inline"><i class="fas fa-info-circle"></i> Aucune matière disponible pour cette classe.</div>`;
+    } else {
+        const students = studentsByClassGlobal[className] || [];
+        subjects.forEach(subject => {
+            const sv = getSubjectIcon(subject);
+            const isComplete = isSubjectComplete(className, subject, students);
+            html += `
+                <div class="icon-nav-card subject-card ${isComplete ? 'complete' : ''}"
+                     onclick="displayNotesForSubject('${className}', '${subject.replace(/'/g, "\\'")}')">
+                    <div class="icon-nav-bubble subject-bubble" style="background: linear-gradient(135deg, ${sv.color}cc, ${sv.color});">
+                        <i class="fas ${sv.icon}"></i>
+                    </div>
+                    ${isComplete ? '<div class="complete-badge"><i class="fas fa-check-circle"></i> Complet</div>' : ''}
+                    <span class="icon-nav-label subject-label" title="${subject}">${subject}</span>
+                </div>
+            `;
+        });
+    }
+
+    html += `</div></div>`;
+    outputDiv.innerHTML = html;
+}
+
+// Vérifie si tous les élèves d'une classe ont au moins une note pour cette matière
+function isSubjectComplete(className, subject, students) {
+    if (!students || students.length === 0) return false;
+    return students.every(student => {
+        const note = allNotesData.find(n =>
+            n.class   === className  &&
+            n.subject === subject    &&
+            n.studentName === student &&
+            n.semester === currentSemester
+        );
+        if (!note) return false;
+        const tc   = normalizeVal(note.travauxClasse);
+        const dev  = normalizeVal(note.devoirs);
+        const eva  = normalizeVal(note.evaluation);
+        const exam = normalizeVal(note.examen);
+        return tc !== '' || dev !== '' || eva !== '' || exam !== '';
+    });
+}
+
+// ====================================
+// SYSTÈME D'ICÔNES — NIVEAU 3 : TABLEAU
+// ====================================
+function displayNotesForSubject(className, subject) {
+    iconNavClass   = className;
+    iconNavSubject = subject;
+
+    // Synchroniser les selects filtres silencieusement
+    _suppressFilterChange = true;
+    sortClassSelect.value   = className;
+    sortSubjectSelect.value = subject;
+    sortStudentSelect.value = '';
+    _suppressFilterChange = false;
+
+    const cv = getClassVisual(className);
+    const sv = getSubjectIcon(subject);
+
+    // Filtrer et trier les notes
+    let filteredNotes = allNotesData.filter(n =>
+        n.class   === className  &&
+        n.subject === subject    &&
+        n.semester === currentSemester
+    );
+    filteredNotes.sort((a, b) => a.studentName.localeCompare(b.studentName));
+
+    // Calculer l'état de complétion
+    const students = studentsByClassGlobal[className] || [];
+    const complete  = isSubjectComplete(className, subject, students);
+
+    // Breadcrumb + tableau
+    let html = `
+        <div class="icon-nav-table-header">
+            <div class="icon-nav-breadcrumb">
+                <button class="icon-nav-back" onclick="displayClassIcons()">
+                    <i class="fas fa-arrow-left"></i> Classes
+                </button>
+                <span class="breadcrumb-sep"><i class="fas fa-chevron-right"></i></span>
+                <button class="icon-nav-back-subject" onclick="displaySubjectIcons('${className}')">
+                    <i class="fas ${cv.icon}"></i> ${cv.label}
+                </button>
+                <span class="breadcrumb-sep"><i class="fas fa-chevron-right"></i></span>
+                <span class="breadcrumb-current subject-crumb" style="background: linear-gradient(135deg, ${sv.color}bb, ${sv.color});">
+                    <i class="fas ${sv.icon}"></i> ${subject}
+                </span>
+                ${complete ? '<span class="breadcrumb-complete"><i class="fas fa-check-circle"></i> Matière complète</span>' : ''}
+            </div>
         </div>
     `;
+
+    outputDiv.innerHTML = html;
+
+    // Appeler displayNotesTable qui gère aussi les bulk actions
+    if (filteredNotes.length === 0) {
+        outputDiv.innerHTML += `<div class="icon-nav-no-notes"><i class="fas fa-inbox"></i><p>Aucune note enregistrée pour cette matière.<br>Utilisez le formulaire ci-dessus pour saisir les notes.</p></div>`;
+        currentlyDisplayedNotes = [];
+        updateBulkActionsVisibility();
+    } else {
+        // Créer un conteneur séparé pour le tableau
+        const tableContainer = document.createElement('div');
+        tableContainer.id = 'table-container-inner';
+        outputDiv.appendChild(tableContainer);
+        // Temporairement pointer outputDiv vers tableContainer pour displayNotesTable
+        const origOutputDiv = outputDiv;
+        const savedHTML = outputDiv.innerHTML;
+        // Patch : on insère le tableau dans le conteneur
+        displayNotesTableInto(filteredNotes, tableContainer);
+    }
+}
+
+// Version de displayNotesTable qui écrit dans un conteneur cible
+function displayNotesTableInto(notes, container) {
+    currentlyDisplayedNotes = notes;
+    updateBulkActionsVisibility();
+
+    let tableHTML = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Élève</th>
+                    <th>TC</th>
+                    <th>Dev</th>
+                    <th>Eval</th>
+                    <th>Exam</th>
+                    <th>Total</th>
+                    <th>Saisi</th>
+                    ${isAdmin ? '<th>Approuvé</th>' : ''}
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    notes.forEach(note => {
+        const tc   = normalizeVal(note.travauxClasse);
+        const dev  = normalizeVal(note.devoirs);
+        const eva  = normalizeVal(note.evaluation);
+        const exam = normalizeVal(note.examen);
+
+        const hasAny = tc !== '' || dev !== '' || eva !== '' || exam !== '';
+        let totalDisplay = '';
+        if (hasAny) {
+            const total = (tc   !== '' ? parseFloat(tc)   : 0) +
+                          (dev  !== '' ? parseFloat(dev)  : 0) +
+                          (eva  !== '' ? parseFloat(eva)  : 0) +
+                          (exam !== '' ? parseFloat(exam) : 0);
+            totalDisplay = String(parseFloat(total.toFixed(4)));
+        }
+
+        const enteredChecked = note.enteredInSystem ? 'checked' : '';
+        const enteredCheckbox = `<input type="checkbox" ${enteredChecked} onchange="toggleEnteredInSystem('${note._id}', this.checked)" title="Marquer comme saisi">`;
+
+        let approvedCheckbox = '';
+        if (isAdmin) {
+            const approvedChecked = note.approvedByAdmin ? 'checked' : '';
+            approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin('${note._id}', this.checked)" title="Approuver"></td>`;
+        }
+
+        const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'travauxClasse', this.value)">`;
+        const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'devoirs',      this.value)">`;
+        const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'evaluation',   this.value)">`;
+        const examInput = `<input type="number" value="${exam}" placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'examen',       this.value)">`;
+
+        tableHTML += `
+            <tr id="note-row-${note._id}">
+                <td class="student-name-cell">${note.studentName}</td>
+                <td>${tcInput}</td>
+                <td>${devInput}</td>
+                <td>${evaInput}</td>
+                <td>${examInput}</td>
+                <td><strong id="total-${note._id}">${totalDisplay}</strong></td>
+                <td>${enteredCheckbox}</td>
+                ${approvedCheckbox}
+                <td>
+                    <button onclick="deleteNote('${note._id}')" class="delete-btn-inline">
+                        <i class="fas fa-trash"></i> Supprimer
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tableHTML += '</tbody></table>';
+    container.innerHTML = tableHTML;
 }
 
 function filterAndDisplayNotes() {
-    const filterClass = sortClassSelect.value;
+    const filterClass   = sortClassSelect.value;
     const filterSubject = sortSubjectSelect.value;
     const filterStudent = sortStudentSelect.value;
-    
-    // Si aucun filtre n'est sélectionné, afficher le message initial
+
+    // Si aucun filtre sélectionné, revenir aux icônes de classes
     if (!filterClass && !filterSubject && !filterStudent) {
-        displayInitialMessage();
+        displayClassIcons();
         return;
     }
-    
+
+    // Si classe sélectionnée sans matière ni élève → icônes de matières
+    if (filterClass && !filterSubject && !filterStudent) {
+        displaySubjectIcons(filterClass);
+        return;
+    }
+
+    // Si classe + matière → tableau via le système d'icônes
+    if (filterClass && filterSubject && !filterStudent) {
+        displayNotesForSubject(filterClass, filterSubject);
+        return;
+    }
+
+    // Sinon filtrage classique (avec filtre élève par exemple)
+    iconNavClass   = filterClass   || null;
+    iconNavSubject = filterSubject || null;
+
     let filteredNotes = allNotesData.filter(note => {
-        return (!filterClass || note.class === filterClass) &&
-               (!filterSubject || note.subject === filterSubject) &&
+        return (!filterClass   || note.class       === filterClass)   &&
+               (!filterSubject || note.subject     === filterSubject) &&
                (!filterStudent || note.studentName === filterStudent);
     });
-    
-    // Tri par classe puis par nom d'élève
+
     filteredNotes.sort((a, b) => {
         if (a.class !== b.class) return a.class.localeCompare(b.class);
         return a.studentName.localeCompare(b.studentName);
     });
-    
+
     displayNotesTable(filteredNotes);
 }
 
@@ -539,20 +894,33 @@ function updateSortStudentOptionsForFilterClass(filterClass) {
 }
 
 // ====================================
-// AFFICHAGE DU TABLEAU AVEC MODIFICATION INLINE
+// AFFICHAGE DU TABLEAU AVEC MODIFICATION INLINE (mode filtrage élève)
 // ====================================
 function displayNotesTable(notes) {
-    // Sauvegarder les notes actuellement affichées pour les boutons en masse
     currentlyDisplayedNotes = notes;
-    
-    // Mettre à jour la visibilité des boutons en masse
     updateBulkActionsVisibility();
-    
+
     if (notes.length === 0) {
-        outputDiv.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">Aucune note disponible pour les filtres sélectionnés.</p>';
+        outputDiv.innerHTML = `
+            <div class="icon-nav-no-notes">
+                <i class="fas fa-inbox"></i>
+                <p>Aucune note disponible pour les filtres sélectionnés.</p>
+                <button class="icon-nav-back" onclick="displayClassIcons()" style="margin-top:1rem;">
+                    <i class="fas fa-arrow-left"></i> Retour aux classes
+                </button>
+            </div>`;
         return;
     }
-    
+
+    // Breadcrumb retour
+    let breadcrumb = `
+        <div class="icon-nav-breadcrumb" style="margin-bottom:1rem;">
+            <button class="icon-nav-back" onclick="displayClassIcons()">
+                <i class="fas fa-arrow-left"></i> Classes
+            </button>
+        </div>
+    `;
+
     let tableHTML = `
         <table>
             <thead>
@@ -572,7 +940,7 @@ function displayNotesTable(notes) {
             </thead>
             <tbody>
     `;
-    
+
     notes.forEach(note => {
         // normalizeVal() : 0, "0", null, "" → '' (case vide)
         const tc   = normalizeVal(note.travauxClasse);
@@ -589,24 +957,21 @@ function displayNotesTable(notes) {
                           (exam !== '' ? parseFloat(exam) : 0);
             totalDisplay = String(parseFloat(total.toFixed(4)));
         }
-        
-        // Checkbox "Saisi" - toujours visible et modifiable
-        const enteredChecked = note.enteredInSystem ? 'checked' : '';
+
+        const enteredChecked  = note.enteredInSystem  ? 'checked' : '';
         const enteredCheckbox = `<input type="checkbox" ${enteredChecked} onchange="toggleEnteredInSystem('${note._id}', this.checked)" title="Marquer comme saisi">`;
-        
-        // Checkbox "Approuvé" - visible et modifiable uniquement par les admins
+
         let approvedCheckbox = '';
         if (isAdmin) {
             const approvedChecked = note.approvedByAdmin ? 'checked' : '';
             approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin('${note._id}', this.checked)" title="Approuver"></td>`;
         }
-        
-        // Inputs éditables inline — valeurs normalisées, vide si 0/null
+
         const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'travauxClasse', this.value)">`;
         const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'devoirs',      this.value)">`;
         const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'evaluation',   this.value)">`;
         const examInput = `<input type="number" value="${exam}" placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'examen',       this.value)">`;
-        
+
         tableHTML += `
             <tr id="note-row-${note._id}">
                 <td>${note.class}</td>
@@ -620,16 +985,16 @@ function displayNotesTable(notes) {
                 <td>${enteredCheckbox}</td>
                 ${approvedCheckbox}
                 <td>
-                    <button onclick="deleteNote('${note._id}')" style="background: #F44336; color: white; padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer;">
+                    <button onclick="deleteNote('${note._id}')" class="delete-btn-inline">
                         <i class="fas fa-trash"></i> Supprimer
                     </button>
                 </td>
             </tr>
         `;
     });
-    
+
     tableHTML += '</tbody></table>';
-    outputDiv.innerHTML = tableHTML;
+    outputDiv.innerHTML = breadcrumb + tableHTML;
 }
 
 // ====================================
@@ -1034,3 +1399,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (setAllApprovedBtn) setAllApprovedBtn.addEventListener('click', setAllApproved);
     if (unsetAllApprovedBtn) unsetAllApprovedBtn.addEventListener('click', unsetAllApproved);
 });
+
+// ====================================
+// EXPOSITION GLOBALE — fonctions appelées depuis onclick inline (HTML dynamique)
+// ====================================
+window.displayClassIcons    = displayClassIcons;
+window.displaySubjectIcons  = displaySubjectIcons;
+window.displayNotesForSubject = displayNotesForSubject;
