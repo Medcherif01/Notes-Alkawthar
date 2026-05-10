@@ -1016,3 +1016,360 @@ body.girls-section .output-modern td strong {
 }
 
 .row-saved td { animation: rowHighlight 1s ease-out forwards; }
+
+/* ============================================================
+   SYSTÈME D'ICÔNES INTERACTIF — REGISTRE DES NOTES
+   ============================================================ */
+
+/* Conteneur principal */
+.icon-nav-wrapper {
+    padding: 0.5rem 0;
+    animation: fadeInUp 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* En-tête indicatif */
+.icon-nav-header {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 1.6rem;
+    padding: 0.7rem 1.1rem;
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    border-left: 4px solid var(--primary);
+}
+
+.icon-nav-header i {
+    color: var(--primary);
+    font-size: 1.05rem;
+}
+
+body.girls-section .icon-nav-header {
+    border-left-color: var(--girls-pink);
+}
+body.girls-section .icon-nav-header i {
+    color: var(--girls-pink);
+}
+
+/* Breadcrumb navigation */
+.icon-nav-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1.4rem;
+    flex-wrap: wrap;
+}
+
+.icon-nav-back,
+.icon-nav-back-subject {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 1rem;
+    border: 2px solid var(--border);
+    border-radius: 99px;
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    line-height: 1;
+}
+
+.icon-nav-back:hover,
+.icon-nav-back-subject:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light);
+    transform: translateY(-2px);
+}
+
+body.girls-section .icon-nav-back:hover,
+body.girls-section .icon-nav-back-subject:hover {
+    border-color: var(--girls-pink);
+    color: var(--girls-pink);
+    background: var(--girls-pink-light);
+}
+
+.breadcrumb-sep {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.breadcrumb-current {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 1rem;
+    border-radius: 99px;
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.breadcrumb-current.subject-crumb {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.breadcrumb-complete {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 99px;
+    background: linear-gradient(135deg, #16A34A, #4ADE80);
+    color: white;
+    font-size: 0.82rem;
+    font-weight: 700;
+    box-shadow: 0 3px 10px rgba(22,163,74,0.35);
+    animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+/* Grille d'icônes */
+.icon-nav-grid {
+    display: grid;
+    gap: 1.2rem;
+}
+
+.icon-nav-classes {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+
+.icon-nav-subjects {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+/* Carte icône */
+.icon-nav-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.4rem 0.8rem 1.1rem;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    box-shadow: var(--shadow-xs);
+}
+
+.icon-nav-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(79,70,229,0.04), transparent);
+    opacity: 0;
+    transition: opacity 0.22s;
+}
+
+.icon-nav-card:hover::before { opacity: 1; }
+
+.icon-nav-card:hover {
+    transform: translateY(-6px) scale(1.03);
+    box-shadow: var(--shadow-md);
+    border-color: rgba(79,70,229,0.3);
+}
+
+.icon-nav-card:active {
+    transform: translateY(-2px) scale(1.01);
+}
+
+/* Carte matière "complète" → vert */
+.icon-nav-card.complete {
+    border-color: #16A34A;
+    background: linear-gradient(160deg, #F0FDF4 0%, #DCFCE7 100%);
+    box-shadow: 0 4px 16px rgba(22,163,74,0.18);
+}
+
+.icon-nav-card.complete:hover {
+    border-color: #15803D;
+    box-shadow: 0 8px 28px rgba(22,163,74,0.28);
+}
+
+.icon-nav-card.complete::before {
+    background: linear-gradient(135deg, rgba(22,163,74,0.06), transparent);
+}
+
+/* Bulle d'icône */
+.icon-nav-bubble {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    color: white;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.class-card .icon-nav-bubble {
+    width: 74px;
+    height: 74px;
+    font-size: 2rem;
+}
+
+.icon-nav-card:hover .icon-nav-bubble {
+    transform: scale(1.12) rotate(-4deg);
+}
+
+.icon-nav-card.complete .icon-nav-bubble {
+    box-shadow: 0 6px 20px rgba(22,163,74,0.35);
+}
+
+/* Badge "Complet" sur matière */
+.complete-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: linear-gradient(135deg, #16A34A, #4ADE80);
+    color: white;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.22rem 0.55rem;
+    border-radius: 99px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    box-shadow: 0 2px 8px rgba(22,163,74,0.35);
+    animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    letter-spacing: 0.2px;
+    z-index: 2;
+}
+
+/* Label sous l'icône */
+.icon-nav-label {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.3;
+    position: relative;
+    z-index: 1;
+}
+
+.subject-label {
+    font-size: 0.8rem;
+    max-width: 130px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    text-overflow: ellipsis;
+}
+
+.icon-nav-card.complete .icon-nav-label {
+    color: #166534;
+}
+
+/* États vides */
+.icon-nav-empty,
+.icon-nav-empty-inline,
+.icon-nav-no-notes {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 3rem 2rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.icon-nav-empty i,
+.icon-nav-no-notes i {
+    font-size: 3rem;
+    opacity: 0.4;
+}
+
+.icon-nav-empty p,
+.icon-nav-no-notes p {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    max-width: 320px;
+}
+
+.icon-nav-empty-inline {
+    padding: 1.5rem;
+    flex-direction: row;
+    font-size: 0.9rem;
+    gap: 0.6rem;
+    color: var(--text-secondary);
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+
+.icon-nav-empty-inline i { font-size: 1rem; opacity: 0.7; }
+
+/* En-tête du tableau icônes (breadcrumb + infos) */
+.icon-nav-table-header {
+    margin-bottom: 0.5rem;
+    animation: fadeInUp 0.3s ease;
+}
+
+/* Cellule nom d'élève dans tableau simplifié */
+.student-name-cell {
+    font-weight: 700;
+    color: var(--text-primary) !important;
+    white-space: nowrap;
+}
+
+/* Bouton supprimer inline (commun aux deux modes tableau) */
+.delete-btn-inline {
+    background: linear-gradient(135deg, var(--danger), var(--danger-dark)) !important;
+    color: white !important;
+    padding: 0.45rem 0.9rem !important;
+    border: none !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    font-weight: 600 !important;
+    font-size: 0.82rem !important;
+    transition: var(--transition) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+    box-shadow: 0 2px 8px rgba(239,68,68,0.3) !important;
+}
+
+.delete-btn-inline:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 14px rgba(239,68,68,0.45) !important;
+}
+
+/* Responsive icônes */
+@media (max-width: 768px) {
+    .icon-nav-classes  { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.8rem; }
+    .icon-nav-subjects { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.8rem; }
+    .icon-nav-bubble   { width: 54px; height: 54px; font-size: 1.5rem; }
+    .class-card .icon-nav-bubble { width: 60px; height: 60px; font-size: 1.7rem; }
+    .icon-nav-card     { padding: 1.1rem 0.6rem 0.9rem; }
+    .icon-nav-label    { font-size: 0.82rem; }
+    .subject-label     { font-size: 0.74rem; }
+    .breadcrumb-current.subject-crumb { max-width: 160px; }
+}
+
+@media (max-width: 480px) {
+    .icon-nav-classes  { grid-template-columns: repeat(3, 1fr); }
+    .icon-nav-subjects { grid-template-columns: repeat(2, 1fr); }
+}
