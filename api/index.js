@@ -1,5 +1,4 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const path = require('path');
 const PizZip = require('pizzip');
@@ -8,7 +7,6 @@ const JSZip = require('jszip');
 const axios = require('axios');
 const XLSX = require('xlsx');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
 require('dotenv').config();
 
 // Import des données de section
@@ -24,40 +22,14 @@ const {
 const app = express();
 
 // --- Configuration ---
-const MONGO_URL = process.env.MONGO_URL || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || 'une-cle-secrete-pour-le-developpement';
 
-// Connexion MongoDB avec fallback en-memory immédiat si non configuré ou injoignable
-let cachedDb = null;
-let isMongoConnected = false;
-
+// Mode 100% en-memory ultra-rapide (zéro connexion réseau, zéro timeout)
 async function connectToDatabase() {
-    if (cachedDb || isMongoConnected) {
-        return cachedDb;
-    }
-    if (!MONGO_URL) {
-        isMongoConnected = false;
-        return null;
-    }
-    try {
-        mongoose.set('bufferCommands', false);
-        const connection = await mongoose.connect(MONGO_URL, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-            serverSelectionTimeoutMS: 1000,
-        });
-        cachedDb = connection;
-        isMongoConnected = true;
-        console.log('✅ Connected to MongoDB');
-        return connection;
-    } catch (error) {
-        console.warn('⚠️ MongoDB not connected — using in-memory store fallback');
-        isMongoConnected = false;
-        return null;
-    }
+    return null;
 }
 
-// In-Memory Fallback Store
+// In-Memory Notes Store
 let inMemoryNotes = [];
 let noteIdCounter = 1;
 
@@ -179,126 +151,41 @@ const MemoryNoteModel = {
     }
 };
 
-// Schéma MongoDB avec nouveaux champs
-const NoteSchema = new mongoose.Schema({
-    class: String,
-    subject: String,
-    studentName: String,
-    semester: { type: String, required: true, enum: ['S1', 'S2'] },
-    section: { type: String, required: false, enum: ['boys', 'girls'], default: 'boys' },
-    travauxClasse: { type: String, default: null },
-    devoirs: { type: String, default: null },
-    evaluation: { type: String, default: null },
-    examen: { type: String, default: null },
-    teacher: { type: String },
-    approvedByAdmin: { type: Boolean, default: false },
-    enteredInSystem: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now }
-});
-
-let Note;
-try {
-    Note = mongoose.model('Note');
-} catch {
-    Note = mongoose.model('Note', NoteSchema);
-}
-
 const SafeNote = {
     find(query) {
-        if (!isMongoConnected) return MemoryNoteModel.find(query);
-        try {
-            return Note.find(query);
-        } catch (err) {
-            return MemoryNoteModel.find(query);
-        }
+        return MemoryNoteModel.find(query);
     },
     async findOne(query) {
-        if (!isMongoConnected) return MemoryNoteModel.findOne(query);
-        try {
-            return await Note.findOne(query);
-        } catch (err) {
-            return MemoryNoteModel.findOne(query);
-        }
+        return MemoryNoteModel.findOne(query);
     },
     async findById(id) {
-        if (!isMongoConnected) return MemoryNoteModel.findById(id);
-        try {
-            return await Note.findById(id);
-        } catch (err) {
-            return MemoryNoteModel.findById(id);
-        }
+        return MemoryNoteModel.findById(id);
     },
     async findByIdAndUpdate(id, updateData, options) {
-        if (!isMongoConnected) return MemoryNoteModel.findByIdAndUpdate(id, updateData, options);
-        try {
-            return await Note.findByIdAndUpdate(id, updateData, options);
-        } catch (err) {
-            return MemoryNoteModel.findByIdAndUpdate(id, updateData, options);
-        }
+        return MemoryNoteModel.findByIdAndUpdate(id, updateData, options);
     },
     async findByIdAndDelete(id) {
-        if (!isMongoConnected) return MemoryNoteModel.findByIdAndDelete(id);
-        try {
-            return await Note.findByIdAndDelete(id);
-        } catch (err) {
-            return MemoryNoteModel.findByIdAndDelete(id);
-        }
+        return MemoryNoteModel.findByIdAndDelete(id);
     },
     async countDocuments(query) {
-        if (!isMongoConnected) return MemoryNoteModel.countDocuments(query);
-        try {
-            return await Note.countDocuments(query);
-        } catch (err) {
-            return MemoryNoteModel.countDocuments(query);
-        }
+        return MemoryNoteModel.countDocuments(query);
     },
     async updateMany(filter, update) {
-        if (!isMongoConnected) return MemoryNoteModel.updateMany(filter, update);
-        try {
-            return await Note.updateMany(filter, update);
-        } catch (err) {
-            return MemoryNoteModel.updateMany(filter, update);
-        }
+        return MemoryNoteModel.updateMany(filter, update);
     },
     createInstance(data) {
-        if (!isMongoConnected) {
-            return new InMemoryNote(data);
-        }
-        try {
-            return new Note(data);
-        } catch (err) {
-            return new InMemoryNote(data);
-        }
+        return new InMemoryNote(data);
     }
 };
 
 // Configuration Express pour Vercel
 app.set('trust proxy', 1);
 
-// Session avec MongoStore pour persistance (fallback memory store si non disponible)
 const SESSION_MAX_AGE = 10 * 365 * 24 * 60 * 60 * 1000; // 10 ans en millisecondes
-let sessionStore;
-if (MONGO_URL) {
-    try {
-        sessionStore = MongoStore.create({
-            mongoUrl: MONGO_URL,
-            dbName: 'test',
-            collectionName: 'sessions',
-            ttl: 10 * 365 * 24 * 60 * 60,
-            autoRemove: 'native',
-            touchAfter: 24 * 3600
-        });
-    } catch (e) {
-        console.warn('⚠️ MongoStore init failed, using default session store');
-    }
-}
-
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    store: sessionStore,
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
@@ -883,13 +770,12 @@ app.get('/stats-notes', requireAuth, sectionMiddleware, async (req, res) => {
     }
 });
 
-// Start server immediately on startup (synchronous listen), connect to DB in background
+// Start server immediately on synchronous listen
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
     });
-    connectToDatabase().catch(err => console.warn('Background DB connection warning:', err));
 }
 
 // Export pour Vercel
