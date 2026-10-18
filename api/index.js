@@ -805,6 +805,91 @@ app.get('/stats-notes', requireAuth, sectionMiddleware, async (req, res) => {
     }
 });
 
+// Admin management endpoints for classes, students, and teachers
+app.post('/admin/add-class', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { className } = req.body;
+    if (!className) return res.status(400).json({ success: false, message: 'Nom de classe requis.' });
+    
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    if (!studentsMap[className]) {
+        studentsMap[className] = [];
+    }
+    res.json({ success: true, message: `Classe ${className} ajoutée avec succès.` });
+});
+
+app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { className, studentName } = req.body;
+    if (!className || !studentName) return res.status(400).json({ success: false, message: 'Classe et nom d\'élève requis.' });
+    
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    if (!studentsMap[className]) {
+        studentsMap[className] = [];
+    }
+    if (!studentsMap[className].includes(studentName)) {
+        studentsMap[className].push(studentName);
+    }
+    res.json({ success: true, message: `Élève ${studentName} ajouté à ${className}.` });
+});
+
+app.post('/admin/delete-student', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { className, studentName } = req.body;
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    if (studentsMap[className]) {
+        studentsMap[className] = studentsMap[className].filter(s => s !== studentName);
+    }
+    res.json({ success: true, message: `Élève ${studentName} supprimé de ${className}.` });
+});
+
+app.post('/admin/add-teacher', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { teacherName, password, subject, classes } = req.body;
+    if (!teacherName || !subject || !classes) {
+        return res.status(400).json({ success: false, message: 'Nom, matière et classes requis.' });
+    }
+    const section = req.session.section || 'boys';
+    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    const allowedMap = section === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
+    
+    const classList = Array.isArray(classes) ? classes : classes.split(',').map(c => c.trim()).filter(Boolean);
+    
+    allowedMap[teacherName] = password || teacherName;
+    
+    if (!permMap[teacherName] || permMap[teacherName] === 'admin') {
+        permMap[teacherName] = [];
+    }
+    
+    let subPerm = permMap[teacherName].find(p => p.subject === subject);
+    if (subPerm) {
+        subPerm.classes = [...new Set([...subPerm.classes, ...classList])];
+    } else {
+        permMap[teacherName].push({ subject, classes: classList });
+    }
+    
+    res.json({ success: true, message: `Enseignant ${teacherName} mis à jour avec succès.` });
+});
+
 // Start server immediately on synchronous listen
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {

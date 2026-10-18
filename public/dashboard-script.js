@@ -1401,6 +1401,193 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ====================================
+// ADMINISTRATION — GESTION CLASSES, ÉLÈVES & ENSEIGNANTS
+// ====================================
+function initAdminPanel() {
+    if (!isAdmin) return;
+    
+    const actionButtons = document.querySelector('.action-buttons');
+    if (actionButtons && !document.getElementById('adminPanelButton')) {
+        const adminBtn = document.createElement('button');
+        adminBtn.id = 'adminPanelButton';
+        adminBtn.className = 'action-btn';
+        adminBtn.style.background = 'linear-gradient(135deg, #F59E0B, #D97706)';
+        adminBtn.style.color = 'white';
+        adminBtn.innerHTML = '<i class="fas fa-user-shield"></i><span>Admin</span>';
+        adminBtn.addEventListener('click', openAdminModal);
+        actionButtons.prepend(adminBtn);
+    }
+}
+
+function openAdminModal() {
+    const modal = document.getElementById('adminModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        populateAdminModalData();
+    }
+}
+
+function closeAdminModal() {
+    const modal = document.getElementById('adminModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function populateAdminModalData() {
+    const select = document.getElementById('adminStudentClassSelect');
+    if (select) {
+        select.innerHTML = '<option value="">Sélectionner une classe</option>';
+        Object.keys(studentsByClassGlobal).sort().forEach(cls => {
+            select.add(new Option(cls, cls));
+        });
+    }
+
+    const container = document.getElementById('adminStudentsListContainer');
+    if (container) {
+        container.innerHTML = '';
+        Object.entries(studentsByClassGlobal).sort().forEach(([cls, students]) => {
+            const div = document.createElement('div');
+            div.style.marginBottom = '0.8rem';
+            div.innerHTML = `<strong style="color:var(--primary);">${cls}</strong>: ${students.length > 0 ? students.join(', ') : 'Aucun élève'}`;
+            container.appendChild(div);
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initAdminPanel, 500);
+
+    const closeBtn = document.getElementById('closeAdminModal');
+    if (closeBtn) closeBtn.addEventListener('click', closeAdminModal);
+
+    const tab1 = document.getElementById('tabClassesStudents');
+    const tab2 = document.getElementById('tabTeachersSubjects');
+    const content1 = document.getElementById('adminTab1Content');
+    const content2 = document.getElementById('adminTab2Content');
+
+    if (tab1 && tab2) {
+        tab1.addEventListener('click', () => {
+            tab1.classList.add('active');
+            tab2.classList.remove('active');
+            content1.style.display = 'block';
+            content2.style.display = 'none';
+        });
+        tab2.addEventListener('click', () => {
+            tab2.classList.add('active');
+            tab1.classList.remove('active');
+            content1.style.display = 'none';
+            content2.style.display = 'block';
+        });
+    }
+
+    const addClassBtn = document.getElementById('addClassBtn');
+    if (addClassBtn) {
+        addClassBtn.addEventListener('click', async () => {
+            const classNameInput = document.getElementById('newClassName');
+            const className = classNameInput.value.trim();
+            const msg = document.getElementById('adminMessage');
+            if (!className) return;
+
+            try {
+                const res = await fetch('/admin/add-class', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ className })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    msg.style.color = 'var(--success)';
+                    msg.textContent = result.message;
+                    classNameInput.value = '';
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    msg.style.color = 'var(--danger)';
+                    msg.textContent = result.message;
+                }
+            } catch (err) {
+                msg.style.color = 'var(--danger)';
+                msg.textContent = 'Erreur réseau.';
+            }
+        });
+    }
+
+    const addStudentBtn = document.getElementById('addStudentBtn');
+    if (addStudentBtn) {
+        addStudentBtn.addEventListener('click', async () => {
+            const className = document.getElementById('adminStudentClassSelect').value;
+            const studentInput = document.getElementById('newStudentName');
+            const studentName = studentInput.value.trim();
+            const msg = document.getElementById('adminMessage');
+            if (!className || !studentName) {
+                msg.style.color = 'var(--danger)';
+                msg.textContent = 'Veuillez sélectionner une classe et entrer un nom d\'élève.';
+                return;
+            }
+
+            try {
+                const res = await fetch('/admin/add-student', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ className, studentName })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    msg.style.color = 'var(--success)';
+                    msg.textContent = result.message;
+                    studentInput.value = '';
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    msg.style.color = 'var(--danger)';
+                    msg.textContent = result.message;
+                }
+            } catch (err) {
+                msg.style.color = 'var(--danger)';
+                msg.textContent = 'Erreur réseau.';
+            }
+        });
+    }
+
+    const teacherForm = document.getElementById('adminTeacherForm');
+    if (teacherForm) {
+        teacherForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const teacherName = document.getElementById('teacherName').value.trim();
+            const teacherPassword = document.getElementById('teacherPassword').value.trim();
+            const teacherSubject = document.getElementById('teacherSubject').value.trim();
+            const teacherClasses = document.getElementById('teacherClasses').value.trim();
+            const msg = document.getElementById('adminMessage');
+
+            try {
+                const res = await fetch('/admin/add-teacher', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        teacherName,
+                        password: teacherPassword || teacherName,
+                        subject: teacherSubject,
+                        classes: teacherClasses
+                    })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    msg.style.color = 'var(--success)';
+                    msg.textContent = result.message;
+                    teacherForm.reset();
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    msg.style.color = 'var(--danger)';
+                    msg.textContent = result.message;
+                }
+            } catch (err) {
+                msg.style.color = 'var(--danger)';
+                msg.textContent = 'Erreur réseau.';
+            }
+        });
+    }
+});
+
+// ====================================
 // EXPOSITION GLOBALE — fonctions appelées depuis onclick inline (HTML dynamique)
 // ====================================
 window.displayClassIcons    = displayClassIcons;
