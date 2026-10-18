@@ -510,6 +510,38 @@ app.delete('/delete-note/:id', requireAuth, sectionMiddleware, async (req, res) 
     }
 });
 
+// Générateur de template docx de secours si le téléchargement distant échoue
+function getFallbackDocxTemplate() {
+    const fallbackZip = new JSZip();
+    fallbackZip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+
+    fallbackZip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+    fallbackZip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Classe: {className} - Semestre: {semesterDisplay}</w:t></w:p>
+    {#subjects}
+    <w:p><w:r><w:t>Matière: {subjectName} (Enseignant: {assignedTeacher})</w:t></w:p>
+    {#students}
+    <w:p><w:r><w:t>{studentName} | TC: {travauxClasse} | Dev: {devoirs} | Eval: {evaluation} | Exam: {examen} | Total: {total}</w:t></w:p>
+    {/students}
+    {/subjects}
+    <w:sectPr/>
+  </w:body>
+</w:document>`);
+
+    return fallbackZip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
 app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
     await connectToDatabase();
     const { semester } = req.body;
@@ -533,8 +565,10 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
         try {
             const response = await axios.get(templateURL, { responseType: 'arraybuffer', timeout: 5000 });
             templateContent = response.data;
+            // Valider que c'est un zip valide
+            new PizZip(templateContent);
         } catch (e) {
-            templateContent = Buffer.from('PK\x03\x04');
+            templateContent = getFallbackDocxTemplate();
         }
 
         const zip = new JSZip();
@@ -584,7 +618,8 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
             try {
                 doc = new Docxtemplater(new PizZip(templateContent), { paragraphLoop: true, linebreaks: true, nullGetter: () => "" });
             } catch (err) {
-                return res.status(500).send("❌ Erreur lors du chargement du modèle Word.");
+                templateContent = getFallbackDocxTemplate();
+                doc = new Docxtemplater(new PizZip(templateContent), { paragraphLoop: true, linebreaks: true, nullGetter: () => "" });
             }
 
             const uniqueSubjectsInClassNotes = [...new Set(notesByClass[className].map(n => n.subject))];
@@ -739,7 +774,7 @@ app.post('/migrate-old-notes', requireAuth, async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Error during migration:', error);
-        res.status(500).json({ success: false, message: 'Erreur lors de la migration' });
+        res.status(500).json({ json: false, message: 'Erreur lors de la migration' });
     }
 });
 
