@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connexion — Al Kawthar</title>
+    <title>Connexion Portail — Al Kawthar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -14,7 +17,7 @@
             <i class="fas fa-arrow-left"></i> Retour
         </a>
 
-        <img src="https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552"
+        <img src="/logo.svg" onerror="this.onerror=null;this.src='https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552';"
              alt="Logo Al Kawthar">
 
         <div class="section-badge" id="sectionBadge">
@@ -22,12 +25,12 @@
             <span id="sectionName">Section</span>
         </div>
 
-        <h2>Connexion Enseignant</h2>
+        <h2>Connexion Portail</h2>
 
         <form id="loginForm">
             <div class="input-group">
                 <label for="username">
-                    <i class="fas fa-user"></i> Nom d'utilisateur
+                    <i class="fas fa-user"></i> Identifiant
                 </label>
                 <input type="text" id="username" name="username" required
                        autocomplete="username" placeholder="Entrez votre identifiant">
@@ -54,6 +57,15 @@
                 <span>Se Connecter</span>
             </button>
 
+            <div style="margin-top: 18px; padding: 10px 14px; background: rgba(0,0,0,0.03); border: 1px dashed rgba(0,0,0,0.12); border-radius: 8px; font-size: 11.5px; color: #475569; text-align: left;">
+                <div style="font-weight: 700; color: #1E293B; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+                    <span><i class="fas fa-key" style="margin-right: 5px;"></i> Accès Rapides Démo</span>
+                    <span style="font-size: 10px; cursor: pointer; color: #2563EB;" onclick="fillLogin('Mohamed', 'Mohamed')">Admin Auto</span>
+                </div>
+                <div>• <strong>Admin :</strong> Mohamed / Mohamed (ou Zohra / Zohra)</div>
+                <div>• <strong>Enseignants :</strong> Identifiant = Mot de passe (ex: Sami, Abas, Sylvano)</div>
+            </div>
+
             <p id="errorMessage" class="error-message"></p>
         </form>
     </div>
@@ -79,6 +91,12 @@
             this.classList.toggle('fa-eye-slash', show);
             this.classList.toggle('fa-eye', !show);
         });
+
+        // ---- Remplissage rapide ----
+        window.fillLogin = function(u, p) {
+            document.getElementById('username').value = u;
+            document.getElementById('password').value = p;
+        };
 
         // ---- Formulaire login ----
         document.getElementById('loginForm').addEventListener('submit', async (e) => {

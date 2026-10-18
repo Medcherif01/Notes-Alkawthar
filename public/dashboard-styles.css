@@ -36,7 +36,7 @@
 /* ===== RESET BODY POUR DASHBOARD ===== */
 body {
     background: var(--bg);
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     color: var(--text-primary);
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
@@ -296,6 +296,28 @@ body.girls-section .modern-header {
 .logout-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 18px rgba(183,28,28,0.5);
+}
+
+.report-btn {
+    background: linear-gradient(135deg, #0D9488, #059669);
+    color: white;
+    box-shadow: 0 3px 10px rgba(13,148,136,0.35);
+}
+
+.report-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(13,148,136,0.5);
+}
+
+.admin-btn {
+    background: linear-gradient(135deg, #D97706, #B45309);
+    color: white;
+    box-shadow: 0 3px 10px rgba(217,119,6,0.35);
+}
+
+.admin-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(217,119,6,0.5);
 }
 
 /* ===== SÉLECTEUR DE SEMESTRE ===== */

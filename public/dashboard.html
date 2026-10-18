@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Al Kawthar — Gestion des Notes</title>
+    <title>Al Kawthar International School — Gestion des Notes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/dashboard-styles.css">
 </head>
@@ -48,6 +51,14 @@
                 </div>
             </div>
             <div class="action-buttons">
+                <button id="openAdminModalBtn" class="action-btn admin-btn" style="display: none;" title="Administration de l'école">
+                    <i class="fas fa-user-shield"></i>
+                    <span>Administration</span>
+                </button>
+                <button id="openReportModalBtn" class="action-btn report-btn" title="Générer Bulletin Officiel (A4 PDF)">
+                    <i class="fas fa-print"></i>
+                    <span>Bulletin PDF</span>
+                </button>
                 <button id="generateWordButton" class="action-btn word-btn" title="Générer Word">
                     <i class="fas fa-file-word"></i>
                     <span>Word</span>
@@ -239,50 +250,118 @@
 
     </div><!-- fin main-container -->
 
+    <!-- ===== MODAL GÉNÉRATION RAPPORT OFFICIEL (HTML / PDF A4) ===== -->
+    <div id="reportModal" class="modern-progress" style="display: none; align-items: center; justify-content: center;">
+        <div class="progress-content" style="text-align: left; max-width: 480px; width: 92%; padding: 2rem; border-radius: var(--radius-md);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2 style="font-size: 1.15rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; margin: 0; font-weight: 700;">
+                    <i class="fas fa-print" style="color: var(--primary);"></i> Bulletin Officiel (HTML / PDF A4)
+                </h2>
+                <button type="button" id="closeReportModal" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-muted);">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.45;">
+                Générez le registre académique officiel au format A4 haute fidélité avec en-tête de l'école, moyennes, mentions et zones de visa. Prêt pour impression ou export PDF.
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
+                <div>
+                    <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
+                        Période Académique
+                    </label>
+                    <select id="reportSemesterSelect" class="modern-select" style="width: 100%;">
+                        <option value="S1">Semestre 1 (Septembre — Janvier)</option>
+                        <option value="S2">Semestre 2 (Février — Juin)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
+                        Classe à imprimer
+                    </label>
+                    <select id="reportClassSelect" class="modern-select" style="width: 100%;">
+                        <option value="ALL">Toutes les Classes (Bulletin Complet)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button type="button" id="cancelReportModal" class="action-btn" style="background: var(--surface-2); border: 1px solid var(--border); color: var(--text-secondary);">
+                    Annuler
+                </button>
+                <button type="button" id="submitReportModal" class="submit-btn" style="display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
+                    <i class="fas fa-external-link-alt"></i>
+                    <span>Ouvrir & Imprimer PDF</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- ===== MODAL ADMINISTRATION (ADMIN ONLY) ===== -->
     <div id="adminModal" class="modern-progress" style="display: none; align-items: center; justify-content: center;">
-        <div class="progress-content" style="text-align: left; max-width: 650px; width: 92%; max-height: 85vh; overflow-y: auto; padding: 2rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                <h2 style="font-size: 1.25rem; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; margin:0;">
-                    <i class="fas fa-user-shield"></i> Administration — Gestion de l'École
+        <div class="progress-content" style="text-align: left; max-width: 720px; width: 94%; max-height: 88vh; overflow-y: auto; padding: 2rem; border-radius: var(--radius-md);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2 style="font-size: 1.25rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; margin: 0; font-weight: 800;">
+                    <i class="fas fa-user-shield" style="color: var(--primary);"></i> Administration — Al Kawthar
                 </h2>
-                <button type="button" id="closeAdminModal" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-muted);">
+                <button type="button" id="closeAdminModal" style="background: none; border: none; font-size: 1.25rem; cursor: pointer; color: var(--text-muted);">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
 
             <!-- Tabs -->
-            <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; border-bottom: 2px solid var(--border); padding-bottom: 0.5rem;">
-                <button type="button" id="tabClassesStudents" class="semester-btn active" style="padding: 0.4rem 1rem; font-size: 0.85rem; cursor:pointer;">Classes & Élèves</button>
-                <button type="button" id="tabTeachersSubjects" class="semester-btn" style="padding: 0.4rem 1rem; font-size: 0.85rem; cursor:pointer;">Enseignants & Matières</button>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; border-bottom: 2px solid var(--border); padding-bottom: 0.6rem;">
+                <button type="button" id="tabClassesStudents" class="semester-btn active" style="padding: 0.5rem 1.2rem; font-size: 0.85rem; font-weight: 700; cursor: pointer;">
+                    <i class="fas fa-users-class" style="margin-right: 0.4rem;"></i>Classes &amp; Élèves
+                </button>
+                <button type="button" id="tabTeachersSubjects" class="semester-btn" style="padding: 0.5rem 1.2rem; font-size: 0.85rem; font-weight: 700; cursor: pointer;">
+                    <i class="fas fa-chalkboard-teacher" style="margin-right: 0.4rem;"></i>Enseignants &amp; Matières
+                </button>
             </div>
 
             <!-- Tab 1: Classes & Élèves -->
             <div id="adminTab1Content">
-                <div style="margin-bottom: 1.5rem;">
-                    <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">Ajouter une Classe</h3>
+                <!-- Section Ajout Classe -->
+                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
+                    <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
+                        <i class="fas fa-plus-circle" style="color: var(--primary); margin-right: 0.3rem;"></i>Ajouter une Nouvelle Classe
+                    </h3>
                     <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" id="newClassName" placeholder="Nom de la classe (ex: PEI6)" class="modern-input" style="flex:1;">
-                        <button type="button" id="addClassBtn" class="submit-btn" style="padding: 0.5rem 1rem; font-size:0.9rem;">Ajouter</button>
+                        <input type="text" id="newClassName" placeholder="ex: PEI6, Terminale, etc." class="modern-input" style="flex: 1;">
+                        <button type="button" id="addClassBtn" class="submit-btn" style="padding: 0.5rem 1.2rem; font-size: 0.85rem;">
+                            Créer la Classe
+                        </button>
                     </div>
                 </div>
 
-                <div style="margin-bottom: 1.5rem;">
-                    <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">Ajouter un Élève</h3>
-                    <div style="display: flex; flex-direction: column; gap: 0.8rem;">
-                        <select id="adminStudentClassSelect" class="modern-select">
-                            <option value="">Sélectionner une classe</option>
-                        </select>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <input type="text" id="newStudentName" placeholder="Prénom et Nom de l'élève" class="modern-input" style="flex:1;">
-                            <button type="button" id="addStudentBtn" class="submit-btn" style="padding: 0.5rem 1rem; font-size:0.9rem;">Ajouter</button>
+                <!-- Section Ajout Élève -->
+                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem;">
+                    <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
+                        <i class="fas fa-user-plus" style="color: var(--success); margin-right: 0.3rem;"></i>Inscrire un Nouvel Élève
+                    </h3>
+                    <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <select id="adminStudentClassSelect" class="modern-select" style="min-width: 180px;">
+                                <option value="">Sélectionner une classe</option>
+                            </select>
+                            <input type="text" id="newStudentName" placeholder="Prénom et Nom complet" class="modern-input" style="flex: 1; min-width: 200px;">
+                            <button type="button" id="addStudentBtn" class="submit-btn" style="padding: 0.5rem 1.2rem; font-size: 0.85rem; background: var(--success);">
+                                Inscrire l'Élève
+                            </button>
                         </div>
                     </div>
                 </div>
 
+                <!-- Répertoire des Classes et Élèves (Modification / Suppression / Transfert) -->
                 <div>
-                    <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">Liste des Élèves par Classe</h3>
-                    <div id="adminStudentsListContainer" style="max-height: 180px; overflow-y: auto; background: var(--surface-2); padding: 0.8rem; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                        <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);">
+                            <i class="fas fa-list-ol" style="margin-right: 0.3rem;"></i>Répertoire des Classes &amp; Élèves
+                        </h3>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Cliquez pour modifier ou supprimer</span>
+                    </div>
+                    <div id="adminStudentsListContainer" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 280px; overflow-y: auto; padding-right: 4px;">
                         <!-- Rempli dynamiquement -->
                     </div>
                 </div>
@@ -290,31 +369,67 @@
 
             <!-- Tab 2: Enseignants & Matières -->
             <div id="adminTab2Content" style="display: none;">
-                <div style="margin-bottom: 1rem;">
-                    <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">Ajouter / Modifier un Enseignant</h3>
-                    <form id="adminTeacherForm" style="display: flex; flex-direction: column; gap: 0.7rem;">
-                        <div>
-                            <label style="font-size: 0.8rem; font-weight: 600;">Nom de l'Enseignant (Login)</label>
-                            <input type="text" id="teacherName" placeholder="Nom exact" required class="modern-input">
+                <!-- Formulaire Enseignant -->
+                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                        <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);" id="teacherFormHeader">
+                            <i class="fas fa-user-edit" style="color: var(--primary); margin-right: 0.3rem;"></i>Ajouter ou Modifier un Enseignant
+                        </h3>
+                        <button type="button" id="resetTeacherFormBtn" style="display: none; background: none; border: none; color: var(--primary); font-size: 0.78rem; font-weight: 600; cursor: pointer;">
+                            <i class="fas fa-undo"></i> Réinitialiser (Nouveau)
+                        </button>
+                    </div>
+
+                    <form id="adminTeacherForm" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <input type="hidden" id="oldTeacherName" value="">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                            <div>
+                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
+                                    Identifiant Enseignant (Login)
+                                </label>
+                                <input type="text" id="teacherName" placeholder="ex: Sami, M. Dupont" required class="modern-input" style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
+                                    Mot de passe
+                                </label>
+                                <input type="text" id="teacherPassword" placeholder="Laisser vide = identique au nom" class="modern-input" style="width: 100%;">
+                            </div>
                         </div>
-                        <div>
-                            <label style="font-size: 0.8rem; font-weight: 600;">Mot de passe</label>
-                            <input type="text" id="teacherPassword" placeholder="Laisser vide = identique au nom" class="modern-input">
+                        <div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 0.75rem;">
+                            <div>
+                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
+                                    Matière enseignée
+                                </label>
+                                <input type="text" id="teacherSubject" placeholder="ex: Mathématiques" required class="modern-input" style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
+                                    Classes assignées (séparées par virgules)
+                                </label>
+                                <input type="text" id="teacherClasses" placeholder="ex: PEI1, PEI2, PEI3" required class="modern-input" style="width: 100%;">
+                            </div>
                         </div>
-                        <div>
-                            <label style="font-size: 0.8rem; font-weight: 600;">Matière enseignée</label>
-                            <input type="text" id="teacherSubject" placeholder="ex: Mathématiques" required class="modern-input">
+                        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem;">
+                            <button type="submit" id="saveTeacherSubmitBtn" class="submit-btn" style="padding: 0.5rem 1.4rem; font-size: 0.85rem;">
+                                <i class="fas fa-save" style="margin-right: 0.3rem;"></i>Enregistrer l'Enseignant
+                            </button>
                         </div>
-                        <div>
-                            <label style="font-size: 0.8rem; font-weight: 600;">Classes assignées (séparées par des virgules)</label>
-                            <input type="text" id="teacherClasses" placeholder="ex: PEI1, PEI2, DP1" required class="modern-input">
-                        </div>
-                        <button type="submit" class="submit-btn" style="margin-top: 0.5rem; font-size:0.9rem;">Enregistrer l'Enseignant</button>
                     </form>
+                </div>
+
+                <!-- Liste des Enseignants enregistrés -->
+                <div>
+                    <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.6rem;">
+                        <i class="fas fa-chalkboard" style="margin-right: 0.3rem;"></i>Corps Enseignant Enregistré
+                    </h3>
+                    <div id="adminTeachersListContainer" style="display: flex; flex-direction: column; gap: 0.6rem; max-height: 240px; overflow-y: auto;">
+                        <!-- Rempli dynamiquement -->
+                    </div>
                 </div>
             </div>
 
-            <div id="adminMessage" style="margin-top: 1rem; font-size: 0.85rem; font-weight: 600; text-align: center;"></div>
+            <div id="adminMessage" style="margin-top: 1rem; font-size: 0.85rem; font-weight: 700; text-align: center; min-height: 1.2rem;"></div>
         </div>
     </div>
 

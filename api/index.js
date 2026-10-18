@@ -212,8 +212,8 @@ function getSectionData(section = 'boys') {
         studentsByClass = JSON.parse(JSON.stringify(studentsByClassBoys));
     }
     
-    const subjectsByClass = buildSubjectsByClass(teacherPermissions);
-    const allClasses = Object.keys(subjectsByClass).sort();
+    const subjectsByClass = buildSubjectsByClass(teacherPermissions, studentsByClass);
+    const allClasses = [...new Set([...Object.keys(studentsByClass), ...Object.keys(subjectsByClass)])].sort();
     const allSubjects = [...new Set(Object.values(subjectsByClass).flat())].sort();
     
     return {
@@ -226,15 +226,20 @@ function getSectionData(section = 'boys') {
     };
 }
 
-function buildSubjectsByClass(permissions) {
+function buildSubjectsByClass(permissions, studentsByClass = {}) {
     const subjects = {};
+    Object.keys(studentsByClass).forEach(c => {
+        subjects[c] = new Set();
+    });
     Object.values(permissions).forEach(perms => {
-        if (perms === 'admin') return;
+        if (perms === 'admin' || !Array.isArray(perms)) return;
         perms.forEach(p => {
-            p.classes.forEach(c => {
-                if (!subjects[c]) subjects[c] = new Set();
-                subjects[c].add(p.subject);
-            });
+            if (p.classes && Array.isArray(p.classes)) {
+                p.classes.forEach(c => {
+                    if (!subjects[c]) subjects[c] = new Set();
+                    subjects[c].add(p.subject);
+                });
+            }
         });
     });
     for (const key in subjects) {
@@ -813,14 +818,88 @@ app.post('/admin/add-class', requireAuth, sectionMiddleware, (req, res) => {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className } = req.body;
+    if (!className || !className.trim()) return res.status(400).json({ success: false, message: 'Nom de classe requis.' });
+    const trimmed = className.trim();
+    
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    if (!studentsMap[trimmed]) {
+        studentsMap[trimmed] = [];
+    }
+    res.json({ success: true, message: `Classe "${trimmed}" ajoutée avec succès.` });
+});
+
+app.post('/admin/update-class', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { oldClassName, newClassName } = req.body;
+    if (!oldClassName || !newClassName || !newClassName.trim()) {
+        return res.status(400).json({ success: false, message: 'Ancien et nouveau noms requis.' });
+    }
+    const trimmedNew = newClassName.trim();
+    
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    
+    if (studentsMap[oldClassName]) {
+        studentsMap[trimmedNew] = studentsMap[oldClassName];
+        delete studentsMap[oldClassName];
+    } else {
+        studentsMap[trimmedNew] = [];
+    }
+
+    // Update teacher permissions mapping for this class
+    Object.values(permMap).forEach(perms => {
+        if (Array.isArray(perms)) {
+            perms.forEach(p => {
+                if (p.classes) {
+                    p.classes = p.classes.map(c => c === oldClassName ? trimmedNew : c);
+                }
+            });
+        }
+    });
+
+    // Update existing notes for this class in memory
+    inMemoryNotes.forEach(n => {
+        if (n.class === oldClassName && (n.section || 'boys') === section) {
+            n.class = trimmedNew;
+        }
+    });
+
+    res.json({ success: true, message: `Classe renommée en "${trimmedNew}".` });
+});
+
+app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { className } = req.body;
     if (!className) return res.status(400).json({ success: false, message: 'Nom de classe requis.' });
     
     const section = req.session.section || 'boys';
     const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
-    if (!studentsMap[className]) {
-        studentsMap[className] = [];
-    }
-    res.json({ success: true, message: `Classe ${className} ajoutée avec succès.` });
+    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    
+    delete studentsMap[className];
+
+    // Remove class from teacher permissions
+    Object.values(permMap).forEach(perms => {
+        if (Array.isArray(perms)) {
+            perms.forEach(p => {
+                if (p.classes) {
+                    p.classes = p.classes.filter(c => c !== className);
+                }
+            });
+        }
+    });
+
+    res.json({ success: true, message: `Classe "${className}" et ses élèves ont été supprimés.` });
 });
 
 app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
@@ -830,17 +909,69 @@ app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className, studentName } = req.body;
-    if (!className || !studentName) return res.status(400).json({ success: false, message: 'Classe et nom d\'élève requis.' });
+    if (!className || !studentName || !studentName.trim()) {
+        return res.status(400).json({ success: false, message: 'Classe et nom d\'élève requis.' });
+    }
+    const trimmed = studentName.trim();
     
     const section = req.session.section || 'boys';
     const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
     if (!studentsMap[className]) {
         studentsMap[className] = [];
     }
-    if (!studentsMap[className].includes(studentName)) {
-        studentsMap[className].push(studentName);
+    if (!studentsMap[className].includes(trimmed)) {
+        studentsMap[className].push(trimmed);
+        studentsMap[className].sort();
     }
-    res.json({ success: true, message: `Élève ${studentName} ajouté à ${className}.` });
+    res.json({ success: true, message: `Élève "${trimmed}" ajouté à la classe ${className}.` });
+});
+
+app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { className, oldName, newName, targetClass } = req.body;
+    if (!className || !oldName || !newName || !newName.trim()) {
+        return res.status(400).json({ success: false, message: 'Informations incomplètes.' });
+    }
+    const trimmedNew = newName.trim();
+    const destClass = (targetClass && targetClass.trim()) ? targetClass.trim() : className;
+    
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    
+    if (destClass === className) {
+        if (studentsMap[className]) {
+            const idx = studentsMap[className].indexOf(oldName);
+            if (idx !== -1) {
+                studentsMap[className][idx] = trimmedNew;
+                studentsMap[className].sort();
+            }
+        }
+    } else {
+        if (studentsMap[className]) {
+            studentsMap[className] = studentsMap[className].filter(s => s !== oldName);
+        }
+        if (!studentsMap[destClass]) studentsMap[destClass] = [];
+        if (!studentsMap[destClass].includes(trimmedNew)) {
+            studentsMap[destClass].push(trimmedNew);
+            studentsMap[destClass].sort();
+        }
+    }
+
+    // Update notes for this student
+    inMemoryNotes.forEach(n => {
+        if (n.studentName === oldName && (n.section || 'boys') === section) {
+            n.studentName = trimmedNew;
+            if (destClass !== className && n.class === className) {
+                n.class = destClass;
+            }
+        }
+    });
+
+    res.json({ success: true, message: `Élève mis à jour avec succès.` });
 });
 
 app.post('/admin/delete-student', requireAuth, sectionMiddleware, (req, res) => {
@@ -855,16 +986,16 @@ app.post('/admin/delete-student', requireAuth, sectionMiddleware, (req, res) => 
     if (studentsMap[className]) {
         studentsMap[className] = studentsMap[className].filter(s => s !== studentName);
     }
-    res.json({ success: true, message: `Élève ${studentName} supprimé de ${className}.` });
+    res.json({ success: true, message: `Élève "${studentName}" supprimé de ${className}.` });
 });
 
-app.post('/admin/add-teacher', requireAuth, sectionMiddleware, (req, res) => {
-    const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
+const handleSaveTeacher = (req, res) => {
+    const adminUser = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[adminUser];
     if (permissions !== 'admin') {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
-    const { teacherName, password, subject, classes } = req.body;
+    const { oldTeacherName, teacherName, password, subject, classes } = req.body;
     if (!teacherName || !subject || !classes) {
         return res.status(400).json({ success: false, message: 'Nom, matière et classes requis.' });
     }
@@ -872,61 +1003,83 @@ app.post('/admin/add-teacher', requireAuth, sectionMiddleware, (req, res) => {
     const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
     const allowedMap = section === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
     
+    const trimmedName = teacherName.trim();
     const classList = Array.isArray(classes) ? classes : classes.split(',').map(c => c.trim()).filter(Boolean);
     
-    allowedMap[teacherName] = password || teacherName;
-    
-    if (!permMap[teacherName] || permMap[teacherName] === 'admin') {
-        permMap[teacherName] = [];
+    if (oldTeacherName && oldTeacherName !== trimmedName) {
+        delete permMap[oldTeacherName];
+        delete allowedMap[oldTeacherName];
     }
     
-    let subPerm = permMap[teacherName].find(p => p.subject === subject);
-    if (subPerm) {
-        subPerm.classes = [...new Set([...subPerm.classes, ...classList])];
+    allowedMap[trimmedName] = (password && password.trim()) ? password.trim() : (allowedMap[trimmedName] || trimmedName);
+    
+    if (!permMap[trimmedName] || permMap[trimmedName] === 'admin') {
+        permMap[trimmedName] = [];
+    }
+    
+    const existingSubIdx = permMap[trimmedName].findIndex(p => p.subject.toLowerCase() === subject.trim().toLowerCase());
+    if (existingSubIdx !== -1) {
+        permMap[trimmedName][existingSubIdx] = { subject: subject.trim(), classes: classList };
     } else {
-        permMap[teacherName].push({ subject, classes: classList });
+        permMap[trimmedName].push({ subject: subject.trim(), classes: classList });
     }
     
-    res.json({ success: true, message: `Enseignant ${teacherName} mis à jour avec succès.` });
-});
+    res.json({ success: true, message: `Enseignant "${trimmedName}" enregistré avec succès.` });
+};
 
-app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => {
-    const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
+app.post('/admin/add-teacher', requireAuth, sectionMiddleware, handleSaveTeacher);
+app.post('/admin/save-teacher', requireAuth, sectionMiddleware, handleSaveTeacher);
+
+app.post('/admin/delete-teacher', requireAuth, sectionMiddleware, (req, res) => {
+    const user = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[user];
     if (permissions !== 'admin') {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
-    const { className, oldName, newName } = req.body;
-    if (!className || !oldName || !newName) return res.status(400).json({ success: false, message: 'Informations incomplètes.' });
-    
+    const { teacherName } = req.body;
+    if (!teacherName) return res.status(400).json({ success: false, message: 'Nom d\'enseignant requis.' });
+
     const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
-    if (studentsMap[className]) {
-        const idx = studentsMap[className].indexOf(oldName);
-        if (idx !== -1) {
-            studentsMap[className][idx] = newName;
-        }
+    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    const allowedMap = section === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
+
+    if (permMap[teacherName] === 'admin') {
+        return res.status(400).json({ success: false, message: 'Impossible de supprimer un compte administrateur racine.' });
     }
-    res.json({ success: true, message: `Élève mis à jour avec succès.` });
+
+    delete permMap[teacherName];
+    delete allowedMap[teacherName];
+
+    res.json({ success: true, message: `Enseignant "${teacherName}" supprimé avec succès.` });
 });
 
-app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
-    const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
+app.get('/admin/get-teachers', requireAuth, sectionMiddleware, (req, res) => {
+    const user = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[user];
     if (permissions !== 'admin') {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
-    const { className } = req.body;
     const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
-    delete studentsMap[className];
-    res.json({ success: true, message: `Classe ${className} supprimée.` });
+    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    const allowedMap = section === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
+    
+    const list = Object.entries(permMap).map(([name, perms]) => ({
+        name,
+        isAdmin: perms === 'admin',
+        assignments: Array.isArray(perms) ? perms : [],
+        password: allowedMap[name] || name
+    }));
+
+    res.json({ success: true, teachers: list });
 });
 
-app.post('/generate-html-report', requireAuth, sectionMiddleware, async (req, res) => {
-    const { semester } = req.body;
+// Route universelle HTML & PDF (A4) accessible en GET et POST
+app.all('/generate-html-report', requireAuth, sectionMiddleware, async (req, res) => {
+    const semester = req.body?.semester || req.query?.semester || 'S1';
+    const targetClass = req.body?.targetClass || req.query?.targetClass || 'ALL';
     const username = req.session.user;
     const section = req.session.section || 'boys';
+    
     const query = buildMongoQueryForUser(username, semester, req.sectionData.teacherPermissions);
     if (section === 'boys') {
         query.$or = [{ section: 'boys' }, { section: { $exists: false } }, { section: null }];
@@ -939,112 +1092,451 @@ app.post('/generate-html-report', requireAuth, sectionMiddleware, async (req, re
 
     const allowedOptions = getUserAllowedOptions(username, req.sectionData);
     const sectionTitle = section === 'girls' ? 'Section Filles' : 'Section Garçons';
+    const brandColor = section === 'girls' ? '#9D174D' : '#1E40AF';
+    const brandColorLight = section === 'girls' ? '#FDF2F8' : '#EFF6FF';
+    const brandBorder = section === 'girls' ? '#FBCFE8' : '#BFDBFE';
+
+    let classesToRender = allowedOptions.classes;
+    if (targetClass && targetClass !== 'ALL') {
+        classesToRender = classesToRender.filter(c => c === targetClass);
+    }
+
+    const getMention = (val) => {
+        if (val === null || isNaN(val)) return '—';
+        if (val >= 90) return { text: 'Excellent', color: '#166534', bg: '#DCFCE7' };
+        if (val >= 80) return { text: 'Très Bien', color: '#15803D', bg: '#F0FDF4' };
+        if (val >= 70) return { text: 'Bien', color: '#1D4ED8', bg: '#EFF6FF' };
+        if (val >= 60) return { text: 'Assez Bien', color: '#B45309', bg: '#FEF3C7' };
+        if (val >= 50) return { text: 'Passable', color: '#C2410C', bg: '#FFEDD5' };
+        return { text: 'À renforcer', color: '#B91C1C', bg: '#FEE2E2' };
+    };
 
     let html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Rapport de Notes - Al Kawthar - ${semester}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulletin Officiel de Notes — Al Kawthar (${semester})</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
-        @page { size: A4; margin: 15mm; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; color: #1F2937; line-height: 1.5; margin: 0; padding: 0; background: #FFF; }
-        .report-container { max-width: 210mm; margin: 0 auto; padding: 10mm; background: #FFF; }
-        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #1E3A5F; padding-bottom: 15px; margin-bottom: 25px; }
-        .school-info h1 { font-size: 1.4rem; color: #1E3A5F; margin: 0 0 5px 0; text-transform: uppercase; }
-        .school-info p { margin: 0; color: #4B5563; font-size: 0.9rem; }
-        .meta-box { background: #F3F4F6; padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; font-size: 0.95rem; font-weight: 600; }
-        h2 { color: #1E3A5F; font-size: 1.15rem; border-bottom: 2px solid #E5E7EB; padding-bottom: 6px; margin-top: 30px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 0.85rem; }
-        th, td { border: 1px solid #D1D5DB; padding: 6px 10px; text-align: center; }
-        th { background: #1E3A5F; color: #FFF; font-weight: 600; }
-        tr:nth-child(even) { background: #F9FAFB; }
-        .signatures { display: flex; justify-content: space-between; margin-top: 40px; page-break-inside: avoid; }
-        .sig-box { width: 40%; text-align: center; border-top: 1px solid #9CA3AF; padding-top: 10px; font-weight: 600; color: #374151; font-size: 0.9rem; }
+        @page {
+            size: A4 portrait;
+            margin: 10mm 12mm 12mm 12mm;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            color: #0F172A;
+            background: #F1F5F9;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            line-height: 1.4;
+            padding: 24px 0;
+        }
+        .page-sheet {
+            max-width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto 30px auto;
+            background: #FFFFFF;
+            padding: 14mm 16mm;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+            page-break-after: always;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .page-sheet:last-child {
+            page-break-after: auto;
+            margin-bottom: 0;
+        }
+        .toolbar {
+            position: fixed;
+            top: 16px;
+            right: 24px;
+            z-index: 9999;
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(12px);
+            padding: 8px 16px;
+            border-radius: 99px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .toolbar-title {
+            color: #94A3B8;
+            font-size: 11.5px;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+        .toolbar button {
+            background: ${brandColor};
+            color: #FFFFFF;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 99px;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .toolbar button:hover { opacity: 0.95; transform: translateY(-1px); }
+        .toolbar button.close-btn { background: #334155; }
+
+        /* En-tête officiel */
+        .school-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 12px;
+            border-bottom: 2px solid ${brandColor};
+            margin-bottom: 14px;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .school-logo {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+        }
+        .school-title-group h1 {
+            font-size: 16px;
+            font-weight: 800;
+            color: #0F172A;
+            letter-spacing: -0.2px;
+        }
+        .school-title-group p {
+            font-size: 11.5px;
+            color: #475569;
+            font-weight: 500;
+        }
+        .header-right {
+            text-align: right;
+            font-size: 11px;
+            color: #475569;
+        }
+        .header-right strong { color: #0F172A; }
+
+        /* Bandeau période */
+        .meta-strip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: ${brandColorLight};
+            border: 1px solid ${brandBorder};
+            border-radius: 6px;
+            padding: 8px 14px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .meta-badge {
+            background: ${brandColor};
+            color: #FFFFFF;
+            padding: 3px 10px;
+            border-radius: 99px;
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        /* Section classe */
+        .class-section {
+            margin-bottom: 22px;
+        }
+        .class-heading {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: ${brandColor};
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding-bottom: 4px;
+            border-bottom: 1px dashed #CBD5E1;
+        }
+        .class-heading span { font-size: 11px; color: #64748B; font-weight: 500; }
+
+        /* Table de notes */
+        table.grades-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            margin-bottom: 10px;
+        }
+        table.grades-table th {
+            background: #0F172A;
+            color: #FFFFFF;
+            padding: 6px 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            font-size: 9.5px;
+            border: 1px solid #1E293B;
+            text-align: center;
+        }
+        table.grades-table td {
+            padding: 5.5px 8px;
+            border: 1px solid #E2E8F0;
+            text-align: center;
+            vertical-align: middle;
+        }
+        table.grades-table tr:nth-child(even) td {
+            background: #F8FAFC;
+        }
+        table.grades-table td.student-col {
+            text-align: left;
+            font-weight: 600;
+            color: #0F172A;
+        }
+        table.grades-table td.subject-col {
+            text-align: left;
+            color: #334155;
+            font-weight: 500;
+        }
+        table.grades-table td.total-col {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            color: ${brandColor};
+            background: ${brandColorLight};
+            font-size: 11.5px;
+        }
+        .mention-tag {
+            font-size: 9.5px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .num-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10.5px;
+        }
+
+        /* Résumé classe */
+        .class-summary-box {
+            display: flex;
+            justify-content: flex-end;
+            gap: 20px;
+            font-size: 11px;
+            color: #475569;
+            margin-bottom: 14px;
+            padding: 6px 14px;
+            background: #F1F5F9;
+            border-radius: 6px;
+            border: 1px solid #E2E8F0;
+        }
+        .class-summary-box strong { color: #0F172A; font-family: 'JetBrains Mono', monospace; }
+
+        /* Signatures */
+        .signatures-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 24px;
+            padding-top: 14px;
+            border-top: 1.5px dashed #CBD5E1;
+            page-break-inside: avoid;
+        }
+        .signature-cell {
+            text-align: center;
+        }
+        .signature-cell .role {
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #334155;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 40px;
+        }
+        .signature-cell .line {
+            border-bottom: 1.5px solid #94A3B8;
+            margin: 0 16px 6px;
+        }
+        .signature-cell .subtext {
+            font-size: 9.5px;
+            color: #94A3B8;
+        }
+
+        /* Pied de page */
+        .sheet-footer {
+            margin-top: 20px;
+            padding-top: 8px;
+            border-top: 1px solid #E2E8F0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 9.5px;
+            color: #94A3B8;
+        }
+
         @media print {
-            body { -webkit-print-color-adjust: exact; }
-            .no-print { display: none !important; }
+            body { background: #FFFFFF; padding: 0; }
+            .toolbar { display: none !important; }
+            .page-sheet {
+                box-shadow: none;
+                margin: 0;
+                padding: 10mm 12mm;
+                border-radius: 0;
+                max-width: 100%;
+                min-height: auto;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="report-container">
-        <div class="no-print" style="text-align: right; margin-bottom: 15px;">
-            <button onclick="window.print()" style="background: #1E3A5F; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-                🖨️ Imprimer / Enregistrer en PDF A4
-            </button>
-        </div>
-        <header>
-            <div class="school-info">
-                <h1>Al Kawthar International School</h1>
-                <p>Système Officiel de Gestion des Notes — ${sectionTitle}</p>
-            </div>
-            <div style="text-align: right; font-size: 0.85rem; color: #6B7280;">
-                <p><strong>Généré par:</strong> ${username}</p>
-                <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
-            </div>
-        </header>
+    <div class="toolbar">
+        <span class="toolbar-title">Al Kawthar Academic</span>
+        <button onclick="window.print()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Imprimer / Exporter PDF (A4)
+        </button>
+        <button class="close-btn" onclick="window.close()">Fermer</button>
+    </div>
 
-        <div class="meta-box">
-            <span>Période : Semestre ${semester}</span>
-            <span>Section : ${sectionTitle}</span>
-        </div>`;
+    <div class="page-sheet">
+        <div>
+            <header class="school-header">
+                <div class="header-left">
+                    <img src="/logo.svg" alt="Al Kawthar" class="school-logo" onerror="this.style.display='none'">
+                    <div class="school-title-group">
+                        <h1>AL KAWTHAR INTERNATIONAL SCHOOL</h1>
+                        <p>مدارس الكوثر العالمية — Système Officiel de Registre Académique</p>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <p>Date d'édition : <strong>${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</strong></p>
+                    <p>Enseignant / Opérateur : <strong>${username}</strong></p>
+                </div>
+            </header>
 
-    allowedOptions.classes.forEach(className => {
+            <div class="meta-strip">
+                <div>
+                    <span>Période Académique : <strong>Semestre ${semester}</strong></span>
+                    <span style="margin: 0 10px; color: #94A3B8;">|</span>
+                    <span>Division : <strong>${sectionTitle}</strong></span>
+                </div>
+                <div class="meta-badge">Registre Conforme</div>
+            </div>`;
+
+    let totalNotesRendered = 0;
+    classesToRender.forEach(className => {
         const classNotes = notes.filter(n => n.class === className);
         if (classNotes.length === 0) return;
 
-        html += `<h2>Classe : ${className}</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Élève</th>
-                    <th>Matière</th>
-                    <th>Travaux Classe</th>
-                    <th>Devoirs</th>
-                    <th>Évaluation</th>
-                    <th>Examen</th>
-                    <th>Total</th>
-                    <th>Enseignant</th>
-                </tr>
-            </thead>
-            <tbody>`;
+        totalNotesRendered += classNotes.length;
+        const studentScores = [];
+
+        html += `<div class="class-section">
+            <div class="class-heading">
+                <div>Classe : ${className}</div>
+                <span>${classNotes.length} entrée(s) de notes</span>
+            </div>
+            <table class="grades-table">
+                <thead>
+                    <tr>
+                        <th style="width: 25%; text-align: left;">Élève</th>
+                        <th style="width: 20%; text-align: left;">Matière</th>
+                        <th style="width: 9%;">T.C</th>
+                        <th style="width: 9%;">Devoirs</th>
+                        <th style="width: 9%;">Éval.</th>
+                        <th style="width: 9%;">Examen</th>
+                        <th style="width: 10%;">Total</th>
+                        <th style="width: 9%;">Mention</th>
+                    </tr>
+                </thead>
+                <tbody>`;
 
         classNotes.sort((a, b) => a.studentName.localeCompare(b.studentName) || a.subject.localeCompare(b.subject)).forEach(note => {
-            const tc = note.travauxClasse ?? '-';
-            const dev = note.devoirs ?? '-';
-            const eva = note.evaluation ?? '-';
-            const exam = note.examen ?? '-';
+            const tc = note.travauxClasse ?? '—';
+            const dev = note.devoirs ?? '—';
+            const eva = note.evaluation ?? '—';
+            const exam = note.examen ?? '—';
             const hasAny = (note.travauxClasse !== null && note.travauxClasse !== '') || 
                            (note.devoirs !== null && note.devoirs !== '') || 
                            (note.evaluation !== null && note.evaluation !== '') || 
                            (note.examen !== null && note.examen !== '');
-            let total = '-';
+            let total = '—';
+            let mentionObj = null;
             if (hasAny) {
                 const t = (note.travauxClasse ? parseFloat(note.travauxClasse) : 0) +
                           (note.devoirs ? parseFloat(note.devoirs) : 0) +
                           (note.evaluation ? parseFloat(note.evaluation) : 0) +
                           (note.examen ? parseFloat(note.examen) : 0);
-                total = parseFloat(t.toFixed(4));
+                total = parseFloat(t.toFixed(2));
+                studentScores.push(total);
+                mentionObj = getMention(total);
             }
 
             html += `<tr>
-                <td style="text-align: left; font-weight: 600;">${note.studentName}</td>
-                <td>${note.subject}</td>
-                <td>${tc}</td>
-                <td>${dev}</td>
-                <td>${eva}</td>
-                <td>${exam}</td>
-                <td style="font-weight: bold; background: #EEF2FF;">${total}</td>
-                <td style="font-size: 0.85rem; color: #4B5563;">${note.teacher || '-'}</td>
+                <td class="student-col">${note.studentName}</td>
+                <td class="subject-col">${note.subject}</td>
+                <td class="num-val">${tc}</td>
+                <td class="num-val">${dev}</td>
+                <td class="num-val">${eva}</td>
+                <td class="num-val">${exam}</td>
+                <td class="total-col">${total}</td>
+                <td>${mentionObj ? `<span class="mention-tag" style="background:${mentionObj.bg}; color:${mentionObj.color};">${mentionObj.text}</span>` : '—'}</td>
             </tr>`;
         });
 
-        html += `</tbody></table>`;
+        const classAvg = studentScores.length > 0 ? (studentScores.reduce((a, b) => a + b, 0) / studentScores.length).toFixed(2) : 'N/D';
+        const classMax = studentScores.length > 0 ? Math.max(...studentScores).toFixed(2) : 'N/D';
+        const classMin = studentScores.length > 0 ? Math.min(...studentScores).toFixed(2) : 'N/D';
+
+        html += `</tbody>
+            </table>
+            <div class="class-summary-box">
+                <div>Moyenne : <strong>${classAvg}</strong></div>
+                <div>Plus haute : <strong>${classMax}</strong></div>
+                <div>Plus basse : <strong>${classMin}</strong></div>
+                <div>Effectif évalué : <strong>${studentScores.length}</strong></div>
+            </div>
+        </div>`;
     });
 
-    html += `<div class="signatures">
-            <div class="sig-box">Signature de l'Enseignant / Responsable</div>
-            <div class="sig-box">Signature de la Direction</div>
+    if (totalNotesRendered === 0) {
+        html += `<div style="text-align: center; padding: 40px 20px; color: #64748B; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px;">
+            <p style="font-size: 14px; font-weight: 700; color: #334155;">Aucune note enregistrée pour cette sélection (${semester}).</p>
+            <p style="font-size: 12px; margin-top: 6px;">Les notes saisies et validées par les enseignants s'afficheront ici automatiquement au format officiel A4.</p>
+        </div>`;
+    }
+
+    html += `</div>
+        <div>
+            <div class="signatures-grid">
+                <div class="signature-cell">
+                    <div class="role">Enseignant Titulaire</div>
+                    <div class="line"></div>
+                    <div class="subtext">Signature & Date</div>
+                </div>
+                <div class="signature-cell">
+                    <div class="role">Coordination Pédagogique</div>
+                    <div class="line"></div>
+                    <div class="subtext">Visa & Cachet</div>
+                </div>
+                <div class="signature-cell">
+                    <div class="role">Direction Académique</div>
+                    <div class="line"></div>
+                    <div class="subtext">Approbation Finale</div>
+                </div>
+            </div>
+
+            <footer class="sheet-footer">
+                <span>Al Kawthar International School — Registre officiel académique</span>
+                <span>Document imprimable en continu A4</span>
+            </footer>
         </div>
     </div>
 </body>
