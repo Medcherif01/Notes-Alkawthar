@@ -180,30 +180,30 @@ body {
 .section-card.boys { border-top: 4px solid #42A5F5; }
 .section-card.girls { border-top: 4px solid #F06292; }
 
-/* Icône de section */
+/* Icône de section compacte & raffinée */
 .icon-wrapper {
-    width: 90px;
-    height: 90px;
-    border-radius: 50%;
+    width: 54px;
+    height: 54px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0 auto 1.5rem;
+    margin: 0 auto 1.25rem;
     position: relative;
 }
 
 .section-card.boys .icon-wrapper {
     background: linear-gradient(135deg, #1565C0, #42A5F5);
-    box-shadow: 0 8px 25px rgba(66, 165, 245, 0.4);
+    box-shadow: 0 4px 14px rgba(66, 165, 245, 0.35);
 }
 
 .section-card.girls .icon-wrapper {
     background: linear-gradient(135deg, #AD1457, #F06292);
-    box-shadow: 0 8px 25px rgba(240, 98, 146, 0.4);
+    box-shadow: 0 4px 14px rgba(240, 98, 146, 0.35);
 }
 
 .section-icon {
-    font-size: 2.5rem;
+    font-size: 1.35rem;
     color: white;
 }
 

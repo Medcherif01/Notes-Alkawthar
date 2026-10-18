@@ -1466,10 +1466,17 @@ function initAdminPanel() {
     }
 }
 
+// ====================================
+// ADMINISTRATION ACADÉMIQUE PRO — SANS ICÔNES ÉNORMES
+// ====================================
+let adminTeachersCache = [];
+let adminListenersBound = false;
+
 function openAdminModal() {
     const modal = document.getElementById('adminModal');
     if (modal) {
         modal.style.display = 'flex';
+        bindAdminControlsOnce();
         populateAdminModalData();
     }
 }
@@ -1481,320 +1488,147 @@ function closeAdminModal() {
     }
 }
 
-function populateAdminModalData() {
-    // Remplir sélecteur de classe pour ajout élève
-    const select = document.getElementById('adminStudentClassSelect');
-    if (select) {
-        select.innerHTML = '<option value="">Sélectionner une classe</option>';
-        Object.keys(studentsByClassGlobal).sort().forEach(cls => {
-            select.add(new Option(`Classe ${cls}`, cls));
-        });
-    }
+function getInitials(name) {
+    if (!name || typeof name !== 'string') return '??';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
-    // Tab 1: Liste des Classes et Élèves
-    const container = document.getElementById('adminStudentsListContainer');
-    if (container) {
-        container.innerHTML = '';
-        const classNames = Object.keys(studentsByClassGlobal).sort();
-        
-        if (classNames.length === 0) {
-            container.innerHTML = '<div style="padding: 1rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Aucune classe enregistrée. Ajoutez-en une ci-dessus.</div>';
+function showAdminNotice(text, isError = false) {
+    const msg = document.getElementById('adminMessage');
+    if (!msg) return;
+    msg.style.color = isError ? 'var(--danger)' : '#16A34A';
+    msg.textContent = (isError ? '⚠️ ' : '✅ ') + text;
+    setTimeout(() => {
+        if (msg.textContent.includes(text)) msg.textContent = '';
+    }, 4500);
+}
+
+// ------------------------------------
+// SOUS-DIALOGUES IN-APP (ZÉRO ALERT / PROMPT / CONFIRM)
+// ------------------------------------
+function showSubdialogPrompt({ title, desc, defaultValue, placeholder, onConfirm }) {
+    const overlay = document.getElementById('adminPromptDialog');
+    const titleEl = document.getElementById('adminPromptTitle');
+    const descEl = document.getElementById('adminPromptDesc');
+    const inputEl = document.getElementById('adminPromptInput');
+    const confirmBtn = document.getElementById('adminPromptConfirmBtn');
+    const cancelBtn = document.getElementById('adminPromptCancelBtn');
+
+    if (!overlay || !inputEl || !confirmBtn || !cancelBtn) return;
+
+    titleEl.textContent = title;
+    descEl.textContent = desc;
+    inputEl.value = defaultValue || '';
+    inputEl.placeholder = placeholder || '';
+    overlay.style.display = 'flex';
+    inputEl.focus();
+    inputEl.select();
+
+    const cleanup = () => {
+        overlay.style.display = 'none';
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        inputEl.onkeydown = null;
+    };
+
+    cancelBtn.onclick = cleanup;
+    confirmBtn.onclick = async () => {
+        const val = inputEl.value.trim();
+        if (!val) return;
+        cleanup();
+        await onConfirm(val);
+    };
+
+    inputEl.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmBtn.click();
+        } else if (e.key === 'Escape') {
+            cleanup();
         }
-
-        classNames.forEach(cls => {
-            const students = studentsByClassGlobal[cls] || [];
-            const div = document.createElement('div');
-            div.style.background = 'var(--surface)';
-            div.style.borderRadius = 'var(--radius-sm)';
-            div.style.border = '1px solid var(--border)';
-            div.style.padding = '0.75rem';
-            div.style.boxShadow = 'var(--shadow-xs)';
-            
-            let studentsHtml = students.length > 0 ? students.map(s => `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.35rem 0.6rem; border-radius: 4px; background: var(--surface-2); margin-top: 0.3rem; font-size: 0.83rem;">
-                    <span style="font-weight: 600; color: var(--text-primary);"><i class="fas fa-user-graduate" style="color:var(--text-muted); margin-right: 0.4rem; font-size: 0.75rem;"></i>${s}</span>
-                    <div style="display: flex; gap: 0.35rem;">
-                        <button type="button" title="Renommer l'élève" onclick="editStudent('${cls}', '${s}')" style="background:var(--primary); color:white; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-edit"></i> Renommer</button>
-                        <button type="button" title="Transférer vers une autre classe" onclick="transferStudent('${cls}', '${s}')" style="background:#0D9488; color:white; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-exchange-alt"></i> Transférer</button>
-                        <button type="button" title="Supprimer de la classe" onclick="deleteStudent('${cls}', '${s}')" style="background:var(--danger); color:white; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-trash"></i></button>
-                    </div>
-                </div>
-            `).join('') : '<div style="font-size: 0.8rem; color: var(--text-muted); padding: 0.4rem 0.6rem;">Aucun élève dans cette classe.</div>';
-
-            div.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 0.4rem;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <strong style="color:var(--primary); font-size:0.95rem;">Classe ${cls}</strong>
-                        <span style="font-size: 0.75rem; background: var(--primary-light); color: var(--primary); padding: 2px 7px; border-radius: 99px; font-weight: 700;">${students.length} élève(s)</span>
-                    </div>
-                    <div style="display: flex; gap: 0.4rem;">
-                        <button type="button" onclick="editClassName('${cls}')" style="background:var(--surface-2); border: 1px solid var(--border); color:var(--text-secondary); padding:3px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-pen"></i> Renommer</button>
-                        <button type="button" onclick="deleteClass('${cls}')" style="background:#FEE2E2; border: 1px solid #FCA5A5; color:var(--danger); padding:3px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-trash"></i> Supprimer</button>
-                    </div>
-                </div>
-                ${studentsHtml}
-            `;
-            container.appendChild(div);
-        });
-    }
-
-    // Tab 2: Charger la liste des Enseignants
-    loadTeachersList();
+    };
 }
 
-async function loadTeachersList() {
-    const container = document.getElementById('adminTeachersListContainer');
-    if (!container) return;
+function showSubdialogTransfer({ studentName, currentClass, onConfirm }) {
+    const overlay = document.getElementById('adminTransferDialog');
+    const descEl = document.getElementById('adminTransferDesc');
+    const selectEl = document.getElementById('adminTransferSelect');
+    const confirmBtn = document.getElementById('adminTransferConfirmBtn');
+    const cancelBtn = document.getElementById('adminTransferCancelBtn');
 
-    try {
-        const res = await fetch('/admin/get-teachers');
-        if (!res.ok) return;
-        const data = await res.json();
-        
-        container.innerHTML = '';
-        if (!data.teachers || data.teachers.length === 0) {
-            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 1rem;">Aucun enseignant trouvé.</div>';
-            return;
-        }
+    if (!overlay || !selectEl || !confirmBtn || !cancelBtn) return;
 
-        data.teachers.forEach(t => {
-            const card = document.createElement('div');
-            card.style.background = 'var(--surface)';
-            card.style.border = '1px solid var(--border)';
-            card.style.borderRadius = 'var(--radius-sm)';
-            card.style.padding = '0.75rem';
-            card.style.boxShadow = 'var(--shadow-xs)';
-
-            const assignmentsHtml = t.assignments.map(a => `
-                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">
-                    • <strong>${a.subject}</strong> : ${(a.classes || []).join(', ')}
-                </div>
-            `).join('') || (t.isAdmin ? '<div style="font-size: 0.8rem; color: var(--text-muted);">Accès complet à toutes les matières et classes.</div>' : '<div style="font-size: 0.8rem; color: var(--text-muted);">Aucune matière assignée.</div>');
-
-            card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <strong style="color: var(--text-primary); font-size: 0.95rem;">${t.name}</strong>
-                            ${t.isAdmin ? '<span style="font-size: 0.7rem; background: #FEF3C7; color: #B45309; font-weight: 700; padding: 1px 6px; border-radius: 4px;">ADMIN</span>' : ''}
-                        </div>
-                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem;">
-                            Login : <code style="font-family:monospace; background:var(--surface-2); padding: 1px 4px; border-radius:3px;">${t.name}</code> | Mot de passe : <code style="font-family:monospace; background:var(--surface-2); padding: 1px 4px; border-radius:3px;">${t.password || t.name}</code>
-                        </div>
-                        <div style="margin-top: 0.4rem;">
-                            ${assignmentsHtml}
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 0.4rem;">
-                        <button type="button" onclick='populateTeacherForEdit(${JSON.stringify(t)})' style="background: var(--primary); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 600;">
-                            <i class="fas fa-edit"></i> Modifier
-                        </button>
-                        ${!t.isAdmin ? `
-                            <button type="button" onclick="deleteTeacher('${t.name}')" style="background: var(--danger); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-
-    } catch (err) {
-        console.error('Erreur chargement enseignants:', err);
-    }
-}
-
-function populateTeacherForEdit(teacher) {
-    document.getElementById('oldTeacherName').value = teacher.name;
-    document.getElementById('teacherName').value = teacher.name;
-    document.getElementById('teacherPassword').value = teacher.password || '';
-
-    if (teacher.assignments && teacher.assignments.length > 0) {
-        document.getElementById('teacherSubject').value = teacher.assignments[0].subject || '';
-        document.getElementById('teacherClasses').value = (teacher.assignments[0].classes || []).join(', ');
-    } else {
-        document.getElementById('teacherSubject').value = '';
-        document.getElementById('teacherClasses').value = '';
-    }
-
-    const header = document.getElementById('teacherFormHeader');
-    if (header) header.innerHTML = `<i class="fas fa-user-edit" style="color: var(--primary); margin-right: 0.3rem;"></i>Modifier l'Enseignant "${teacher.name}"`;
-
-    const resetBtn = document.getElementById('resetTeacherFormBtn');
-    if (resetBtn) resetBtn.style.display = 'inline-block';
-
-    const saveBtn = document.getElementById('saveTeacherSubmitBtn');
-    if (saveBtn) saveBtn.innerHTML = '<i class="fas fa-save" style="margin-right: 0.3rem;"></i>Mettre à jour l\'Enseignant';
-
-    // Scroll to form smoothly
-    document.getElementById('adminTeacherForm')?.scrollIntoView({ behavior: 'smooth' });
-}
-
-function resetTeacherForm() {
-    document.getElementById('oldTeacherName').value = '';
-    document.getElementById('adminTeacherForm')?.reset();
+    descEl.innerHTML = `Transférer l'élève <strong>${studentName}</strong> (actuellement en <strong>${currentClass}</strong>) vers :`;
+    selectEl.innerHTML = '';
+    const otherClasses = Object.keys(studentsByClassGlobal).filter(c => c !== currentClass).sort();
     
-    const header = document.getElementById('teacherFormHeader');
-    if (header) header.innerHTML = `<i class="fas fa-user-edit" style="color: var(--primary); margin-right: 0.3rem;"></i>Ajouter ou Modifier un Enseignant`;
-
-    const resetBtn = document.getElementById('resetTeacherFormBtn');
-    if (resetBtn) resetBtn.style.display = 'none';
-
-    const saveBtn = document.getElementById('saveTeacherSubmitBtn');
-    if (saveBtn) saveBtn.innerHTML = '<i class="fas fa-save" style="margin-right: 0.3rem;"></i>Enregistrer l\'Enseignant';
-}
-
-async function editClassName(oldClassName) {
-    const newClassName = prompt(`Entrez le nouveau nom pour la classe "${oldClassName}" :`, oldClassName);
-    if (!newClassName || newClassName.trim() === oldClassName) return;
-
-    try {
-        const res = await fetch('/admin/update-class', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ oldClassName, newClassName: newClassName.trim() })
-        });
-        const result = await res.json();
-        if (result.success) {
-            window.location.reload();
-        } else {
-            alert(result.message);
-        }
-    } catch (e) {
-        alert('Erreur réseau lors de la modification.');
-    }
-}
-
-async function editStudent(className, oldName) {
-    const newName = prompt(`Modifier le nom de l'élève "${oldName}" dans la classe ${className} :`, oldName);
-    if (!newName || newName.trim() === oldName) return;
-
-    try {
-        const res = await fetch('/admin/update-student', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ className, oldName, newName: newName.trim() })
-        });
-        const result = await res.json();
-        if (result.success) {
-            window.location.reload();
-        } else {
-            alert(result.message);
-        }
-    } catch (e) {
-        alert('Erreur réseau.');
-    }
-}
-
-async function transferStudent(currentClass, studentName) {
-    const allClasses = Object.keys(studentsByClassGlobal).filter(c => c !== currentClass);
-    if (allClasses.length === 0) {
-        alert('Aucune autre classe disponible pour le transfert.');
+    if (otherClasses.length === 0) {
+        showAdminNotice('Aucune autre classe disponible pour le transfert.', true);
         return;
     }
-    const targetClass = prompt(`Transférer l'élève "${studentName}" vers quelle classe ?\nClasses disponibles : ${allClasses.join(', ')}`, allClasses[0]);
-    if (!targetClass || !targetClass.trim() || targetClass.trim() === currentClass) return;
 
-    try {
-        const res = await fetch('/admin/update-student', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                className: currentClass,
-                oldName: studentName,
-                newName: studentName,
-                targetClass: targetClass.trim()
-            })
-        });
-        const result = await res.json();
-        if (result.success) {
-            window.location.reload();
-        } else {
-            alert(result.message);
-        }
-    } catch (e) {
-        alert('Erreur réseau lors du transfert.');
-    }
+    otherClasses.forEach(c => {
+        selectEl.add(new Option(`Classe ${c}`, c));
+    });
+
+    overlay.style.display = 'flex';
+
+    const cleanup = () => {
+        overlay.style.display = 'none';
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+    };
+
+    cancelBtn.onclick = cleanup;
+    confirmBtn.onclick = async () => {
+        const targetClass = selectEl.value;
+        if (!targetClass) return;
+        cleanup();
+        await onConfirm(targetClass);
+    };
 }
 
-async function deleteStudent(className, studentName) {
-    if (!confirm(`Voulez-vous vraiment supprimer l'élève "${studentName}" de la classe ${className} ?`)) return;
+function showSubdialogConfirm({ title, desc, actionText, onConfirm }) {
+    const overlay = document.getElementById('adminConfirmDialog');
+    const titleEl = document.getElementById('adminConfirmTitle');
+    const descEl = document.getElementById('adminConfirmDesc');
+    const confirmBtn = document.getElementById('adminConfirmActionBtn');
+    const cancelBtn = document.getElementById('adminConfirmCancelBtn');
 
-    try {
-        const res = await fetch('/admin/delete-student', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ className, studentName })
-        });
-        const result = await res.json();
-        if (result.success) {
-            window.location.reload();
-        } else {
-            alert(result.message);
-        }
-    } catch (e) {
-        alert('Erreur réseau.');
-    }
+    if (!overlay || !confirmBtn || !cancelBtn) return;
+
+    titleEl.textContent = title;
+    descEl.innerHTML = desc;
+    confirmBtn.textContent = actionText || 'Supprimer définitivement';
+    overlay.style.display = 'flex';
+
+    const cleanup = () => {
+        overlay.style.display = 'none';
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+    };
+
+    cancelBtn.onclick = cleanup;
+    confirmBtn.onclick = async () => {
+        cleanup();
+        await onConfirm();
+    };
 }
 
-async function deleteClass(className) {
-    if (!confirm(`Voulez-vous vraiment supprimer toute la classe "${className}" et ses élèves ?`)) return;
-
-    try {
-        const res = await fetch('/admin/delete-class', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ className })
-        });
-        const result = await res.json();
-        if (result.success) {
-            window.location.reload();
-        } else {
-            alert(result.message);
-        }
-    } catch (e) {
-        alert('Erreur réseau.');
-    }
-}
-
-async function deleteTeacher(teacherName) {
-    if (!confirm(`Voulez-vous vraiment supprimer l'enseignant "${teacherName}" ?`)) return;
-
-    try {
-        const res = await fetch('/admin/delete-teacher', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ teacherName })
-        });
-        const result = await res.json();
-        if (result.success) {
-            window.location.reload();
-        } else {
-            alert(result.message);
-        }
-    } catch (e) {
-        alert('Erreur réseau.');
-    }
-}
-
-// Exposer globalement pour inline onclick
-window.editClassName = editClassName;
-window.editStudent = editStudent;
-window.transferStudent = transferStudent;
-window.deleteStudent = deleteStudent;
-window.deleteClass = deleteClass;
-window.deleteTeacher = deleteTeacher;
-window.populateTeacherForEdit = populateTeacherForEdit;
-
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(initAdminPanel, 400);
+// ------------------------------------
+// BINDING DES CONTRÔLES D'ADMINISTRATION
+// ------------------------------------
+function bindAdminControlsOnce() {
+    if (adminListenersBound) return;
+    adminListenersBound = true;
 
     const closeBtn = document.getElementById('closeAdminModal');
-    if (closeBtn) closeBtn.addEventListener('click', closeAdminModal);
+    if (closeBtn) closeBtn.onclick = closeAdminModal;
 
     const resetBtn = document.getElementById('resetTeacherFormBtn');
-    if (resetBtn) resetBtn.addEventListener('click', resetTeacherForm);
+    if (resetBtn) resetBtn.onclick = resetTeacherForm;
 
     const tab1 = document.getElementById('tabClassesStudents');
     const tab2 = document.getElementById('tabTeachersSubjects');
@@ -1802,28 +1636,102 @@ document.addEventListener('DOMContentLoaded', () => {
     const content2 = document.getElementById('adminTab2Content');
 
     if (tab1 && tab2) {
-        tab1.addEventListener('click', () => {
+        tab1.onclick = () => {
             tab1.classList.add('active');
             tab2.classList.remove('active');
             content1.style.display = 'block';
             content2.style.display = 'none';
-        });
-        tab2.addEventListener('click', () => {
+            populateAdminModalData();
+        };
+        tab2.onclick = () => {
             tab2.classList.add('active');
             tab1.classList.remove('active');
             content1.style.display = 'none';
             content2.style.display = 'block';
             loadTeachersList();
-        });
+        };
     }
 
+    // Toggle panels
+    const toggleAddClassBtn = document.getElementById('toggleAddClassBtn');
+    const panelAddClass = document.getElementById('panelAddClass');
+    const cancelAddClassBtn = document.getElementById('cancelAddClassBtn');
+    if (toggleAddClassBtn && panelAddClass) {
+        toggleAddClassBtn.onclick = () => {
+            const isHidden = panelAddClass.style.display === 'none';
+            panelAddClass.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) document.getElementById('newClassName')?.focus();
+        };
+    }
+    if (cancelAddClassBtn && panelAddClass) {
+        cancelAddClassBtn.onclick = () => {
+            panelAddClass.style.display = 'none';
+            const input = document.getElementById('newClassName');
+            if (input) input.value = '';
+        };
+    }
+
+    const toggleAddStudentBtn = document.getElementById('toggleAddStudentBtn');
+    const panelAddStudent = document.getElementById('panelAddStudent');
+    const cancelAddStudentBtn = document.getElementById('cancelAddStudentBtn');
+    if (toggleAddStudentBtn && panelAddStudent) {
+        toggleAddStudentBtn.onclick = () => {
+            const isHidden = panelAddStudent.style.display === 'none';
+            panelAddStudent.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) document.getElementById('newStudentName')?.focus();
+        };
+    }
+    if (cancelAddStudentBtn && panelAddStudent) {
+        cancelAddStudentBtn.onclick = () => {
+            panelAddStudent.style.display = 'none';
+            const input = document.getElementById('newStudentName');
+            if (input) input.value = '';
+        };
+    }
+
+    const toggleAddTeacherBtn = document.getElementById('toggleAddTeacherBtn');
+    const panelAddTeacher = document.getElementById('panelAddTeacher');
+    const closeTeacherPanelBtn = document.getElementById('closeTeacherPanelBtn');
+    if (toggleAddTeacherBtn && panelAddTeacher) {
+        toggleAddTeacherBtn.onclick = () => {
+            resetTeacherForm();
+            panelAddTeacher.style.display = 'block';
+            document.getElementById('teacherName')?.focus();
+        };
+    }
+    if (closeTeacherPanelBtn && panelAddTeacher) {
+        closeTeacherPanelBtn.onclick = () => {
+            panelAddTeacher.style.display = 'none';
+            resetTeacherForm();
+        };
+    }
+
+    // Live search & filters
+    const studentSearchInput = document.getElementById('adminStudentSearchInput');
+    if (studentSearchInput) {
+        studentSearchInput.oninput = () => populateAdminModalData();
+    }
+
+    const filterClassView = document.getElementById('adminFilterClassView');
+    if (filterClassView) {
+        filterClassView.onchange = () => populateAdminModalData();
+    }
+
+    const teacherSearchInput = document.getElementById('adminTeacherSearchInput');
+    if (teacherSearchInput) {
+        teacherSearchInput.oninput = () => renderFilteredTeachers();
+    }
+
+    // Action : Créer une classe
     const addClassBtn = document.getElementById('addClassBtn');
     if (addClassBtn) {
-        addClassBtn.addEventListener('click', async () => {
+        addClassBtn.onclick = async () => {
             const classNameInput = document.getElementById('newClassName');
             const className = classNameInput.value.trim();
-            const msg = document.getElementById('adminMessage');
-            if (!className) return;
+            if (!className) {
+                showAdminNotice('Veuillez entrer un nom de classe.', true);
+                return;
+            }
 
             try {
                 const res = await fetch('/admin/add-class', {
@@ -1833,31 +1741,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const result = await res.json();
                 if (result.success) {
-                    msg.style.color = 'var(--success)';
-                    msg.textContent = result.message;
+                    showAdminNotice(result.message);
                     classNameInput.value = '';
-                    setTimeout(() => window.location.reload(), 800);
+                    panelAddClass.style.display = 'none';
+                    if (!studentsByClassGlobal[className]) studentsByClassGlobal[className] = [];
+                    populateAdminModalData();
+                    setTimeout(() => window.location.reload(), 700);
                 } else {
-                    msg.style.color = 'var(--danger)';
-                    msg.textContent = result.message;
+                    showAdminNotice(result.message, true);
                 }
             } catch (err) {
-                msg.style.color = 'var(--danger)';
-                msg.textContent = 'Erreur réseau.';
+                showAdminNotice('Erreur réseau lors de la création de la classe.', true);
             }
-        });
+        };
     }
 
+    // Action : Inscrire un élève
     const addStudentBtn = document.getElementById('addStudentBtn');
     if (addStudentBtn) {
-        addStudentBtn.addEventListener('click', async () => {
+        addStudentBtn.onclick = async () => {
             const className = document.getElementById('adminStudentClassSelect').value;
             const studentInput = document.getElementById('newStudentName');
             const studentName = studentInput.value.trim();
-            const msg = document.getElementById('adminMessage');
             if (!className || !studentName) {
-                msg.style.color = 'var(--danger)';
-                msg.textContent = 'Veuillez sélectionner une classe et entrer un nom d\'élève.';
+                showAdminNotice('Veuillez sélectionner une classe et entrer le nom de l\'élève.', true);
                 return;
             }
 
@@ -1869,31 +1776,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const result = await res.json();
                 if (result.success) {
-                    msg.style.color = 'var(--success)';
-                    msg.textContent = result.message;
+                    showAdminNotice(result.message);
                     studentInput.value = '';
-                    setTimeout(() => window.location.reload(), 800);
+                    panelAddStudent.style.display = 'none';
+                    if (!studentsByClassGlobal[className]) studentsByClassGlobal[className] = [];
+                    if (!studentsByClassGlobal[className].includes(studentName)) {
+                        studentsByClassGlobal[className].push(studentName);
+                        studentsByClassGlobal[className].sort();
+                    }
+                    populateAdminModalData();
+                    setTimeout(() => window.location.reload(), 700);
                 } else {
-                    msg.style.color = 'var(--danger)';
-                    msg.textContent = result.message;
+                    showAdminNotice(result.message, true);
                 }
             } catch (err) {
-                msg.style.color = 'var(--danger)';
-                msg.textContent = 'Erreur réseau.';
+                showAdminNotice('Erreur réseau lors de l\'inscription.', true);
             }
-        });
+        };
     }
 
+    // Action : Enregistrer Enseignant
     const teacherForm = document.getElementById('adminTeacherForm');
     if (teacherForm) {
-        teacherForm.addEventListener('submit', async (e) => {
+        teacherForm.onsubmit = async (e) => {
             e.preventDefault();
             const oldTeacherName = document.getElementById('oldTeacherName').value.trim();
             const teacherName = document.getElementById('teacherName').value.trim();
             const teacherPassword = document.getElementById('teacherPassword').value.trim();
             const teacherSubject = document.getElementById('teacherSubject').value.trim();
             const teacherClasses = document.getElementById('teacherClasses').value.trim();
-            const msg = document.getElementById('adminMessage');
+
+            if (!teacherName || !teacherSubject || !teacherClasses) {
+                showAdminNotice('Veuillez remplir tous les champs obligatoires (*).', true);
+                return;
+            }
 
             try {
                 const res = await fetch('/admin/save-teacher', {
@@ -1909,20 +1825,612 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const result = await res.json();
                 if (result.success) {
-                    msg.style.color = 'var(--success)';
-                    msg.textContent = result.message;
+                    showAdminNotice(result.message);
                     resetTeacherForm();
-                    setTimeout(() => window.location.reload(), 800);
+                    panelAddTeacher.style.display = 'none';
+                    await loadTeachersList();
+                    setTimeout(() => window.location.reload(), 700);
                 } else {
-                    msg.style.color = 'var(--danger)';
-                    msg.textContent = result.message;
+                    showAdminNotice(result.message, true);
                 }
             } catch (err) {
-                msg.style.color = 'var(--danger)';
-                msg.textContent = 'Erreur réseau.';
+                showAdminNotice('Erreur réseau lors de l\'enregistrement de l\'enseignant.', true);
             }
-        });
+        };
     }
+}
+
+// ------------------------------------
+// TAB 1 : AFFICHAGE CLASSES ET ÉLÈVES
+// ------------------------------------
+function populateAdminModalData() {
+    const classNames = Object.keys(studentsByClassGlobal).sort();
+
+    // Remplir sélecteur de classe du formulaire d'inscription
+    const studentClassSelect = document.getElementById('adminStudentClassSelect');
+    if (studentClassSelect) {
+        const currentVal = studentClassSelect.value;
+        studentClassSelect.innerHTML = '<option value="">Sélectionner la classe</option>';
+        classNames.forEach(cls => {
+            studentClassSelect.add(new Option(`Classe ${cls}`, cls));
+        });
+        if (currentVal && classNames.includes(currentVal)) {
+            studentClassSelect.value = currentVal;
+        }
+    }
+
+    // Remplir sélecteur filtre de vue
+    const filterClassView = document.getElementById('adminFilterClassView');
+    if (filterClassView) {
+        const currentFilter = filterClassView.value || 'ALL';
+        filterClassView.innerHTML = '<option value="ALL">Afficher toutes les classes</option>';
+        classNames.forEach(cls => {
+            const count = (studentsByClassGlobal[cls] || []).length;
+            filterClassView.add(new Option(`Classe ${cls} (${count} élèves)`, cls));
+        });
+        if (currentFilter && (currentFilter === 'ALL' || classNames.includes(currentFilter))) {
+            filterClassView.value = currentFilter;
+        }
+    }
+
+    // Récupérer termes de recherche
+    const searchFilter = (document.getElementById('adminStudentSearchInput')?.value || '').toLowerCase().trim();
+    const selectedClassFilter = filterClassView ? filterClassView.value : 'ALL';
+
+    const container = document.getElementById('adminStudentsListContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (classNames.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted); background: var(--surface-2); border-radius: 10px; border: 1px dashed var(--border);">
+                <i class="fas fa-folder-open" style="font-size: 1.5rem; opacity: 0.5; margin-bottom: 0.5rem; display: block;"></i>
+                <div style="font-size: 0.9rem; font-weight: 600;">Aucune classe enregistrée</div>
+                <div style="font-size: 0.8rem; margin-top: 0.25rem;">Cliquez sur « Nouvelle Classe » ci-dessus pour initialiser une cohorte.</div>
+            </div>
+        `;
+        return;
+    }
+
+    let displayedClassesCount = 0;
+    let displayedStudentsCount = 0;
+
+    classNames.forEach(cls => {
+        if (selectedClassFilter !== 'ALL' && selectedClassFilter !== cls) {
+            return;
+        }
+
+        const allStudents = studentsByClassGlobal[cls] || [];
+        const filteredStudents = allStudents.filter(s => {
+            if (!searchFilter) return true;
+            return s.toLowerCase().includes(searchFilter) || cls.toLowerCase().includes(searchFilter);
+        });
+
+        if (searchFilter && filteredStudents.length === 0 && !cls.toLowerCase().includes(searchFilter)) {
+            return;
+        }
+
+        displayedClassesCount++;
+        displayedStudentsCount += filteredStudents.length;
+
+        const classCard = document.createElement('div');
+        classCard.className = 'admin-class-card';
+
+        // En-tête de classe
+        const header = document.createElement('div');
+        header.className = 'admin-class-card-header';
+        header.innerHTML = `
+            <div class="admin-class-card-title">
+                <i class="fas fa-layer-group" style="font-size: 0.85rem; color: var(--primary);"></i>
+                <span>Classe ${cls}</span>
+                <span class="admin-class-pill">${allStudents.length} élève(s)</span>
+            </div>
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <button type="button" class="admin-action-btn admin-action-edit" onclick="openRenameClassModal('${cls}')" title="Renommer la classe ${cls}">
+                    <i class="fas fa-pen"></i> Renommer
+                </button>
+                <button type="button" class="admin-action-btn admin-btn-secondary" onclick="quickEnrollStudent('${cls}')" title="Inscrire un élève en classe ${cls}">
+                    <i class="fas fa-user-plus"></i> + Élève
+                </button>
+                <button type="button" class="admin-action-btn admin-action-delete" onclick="openDeleteClassModal('${cls}')" title="Supprimer la classe ${cls}">
+                    <i class="fas fa-trash"></i> Supprimer
+                </button>
+            </div>
+        `;
+        classCard.appendChild(header);
+
+        // Tableau des élèves
+        if (filteredStudents.length === 0) {
+            const emptyEl = document.createElement('div');
+            emptyEl.style.padding = '1.25rem';
+            emptyEl.style.textAlign = 'center';
+            emptyEl.style.color = 'var(--text-muted)';
+            emptyEl.style.fontSize = '0.82rem';
+            emptyEl.innerHTML = searchFilter ? 'Aucun élève ne correspond à votre recherche.' : 'Aucun élève inscrit dans cette classe pour le moment.';
+            classCard.appendChild(emptyEl);
+        } else {
+            const tableWrapper = document.createElement('div');
+            tableWrapper.style.overflowX = 'auto';
+
+            let tableHtml = `
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 48px; text-align: center;">#</th>
+                            <th>Nom &amp; Prénom de l'Élève</th>
+                            <th style="width: 140px;">Classe</th>
+                            <th style="width: 250px; text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            filteredStudents.forEach((studentName, idx) => {
+                const numStr = String(idx + 1).padStart(2, '0');
+                const initials = getInitials(studentName);
+                const safeName = studentName.replace(/'/g, "\\'");
+
+                tableHtml += `
+                    <tr>
+                        <td style="text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; color: var(--text-muted);">
+                            ${numStr}
+                        </td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.65rem;">
+                                <span class="admin-avatar">${initials}</span>
+                                <span style="font-weight: 600; color: var(--text-primary); font-size: 0.85rem;">${studentName}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="admin-badge admin-badge-class">Classe ${cls}</span>
+                        </td>
+                        <td style="text-align: right;">
+                            <div style="display: inline-flex; gap: 0.35rem; justify-content: flex-end;">
+                                <button type="button" class="admin-action-btn admin-action-edit" onclick="openRenameStudentModal('${cls}', '${safeName}')" title="Modifier le nom">
+                                    <i class="fas fa-edit"></i> Modifier
+                                </button>
+                                <button type="button" class="admin-action-btn admin-action-transfer" onclick="openTransferStudentModal('${cls}', '${safeName}')" title="Transférer dans une autre classe">
+                                    <i class="fas fa-exchange-alt"></i> Transférer
+                                </button>
+                                <button type="button" class="admin-action-btn admin-action-delete" onclick="openDeleteStudentModal('${cls}', '${safeName}')" title="Supprimer l'élève">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableHtml += `
+                    </tbody>
+                </table>
+            `;
+            tableWrapper.innerHTML = tableHtml;
+            classCard.appendChild(tableWrapper);
+        }
+
+        container.appendChild(classCard);
+    });
+
+    if (displayedClassesCount === 0) {
+        container.innerHTML = `
+            <div style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.86rem;">
+                Aucune classe ou élève ne correspond à vos filtres actuels.
+            </div>
+        `;
+    }
+}
+
+// ------------------------------------
+// ACTIONS ÉLÈVES & CLASSES (IN-APP DIALOGS)
+// ------------------------------------
+function quickEnrollStudent(className) {
+    const panel = document.getElementById('panelAddStudent');
+    const select = document.getElementById('adminStudentClassSelect');
+    const nameInput = document.getElementById('newStudentName');
+    if (panel && select) {
+        panel.style.display = 'block';
+        select.value = className;
+        nameInput?.focus();
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function openRenameClassModal(oldClassName) {
+    showSubdialogPrompt({
+        title: `Renommer la classe ${oldClassName}`,
+        desc: `Entrez le nouveau nom officiel de la classe :`,
+        defaultValue: oldClassName,
+        placeholder: 'ex: PEI6, Terminale A...',
+        onConfirm: async (newClassName) => {
+            if (newClassName === oldClassName) return;
+            try {
+                const res = await fetch('/admin/update-class', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ oldClassName, newClassName })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAdminNotice(result.message);
+                    setTimeout(() => window.location.reload(), 600);
+                } else {
+                    showAdminNotice(result.message, true);
+                }
+            } catch (e) {
+                showAdminNotice('Erreur réseau lors de la modification de classe.', true);
+            }
+        }
+    });
+}
+
+function openDeleteClassModal(className) {
+    const studentCount = (studentsByClassGlobal[className] || []).length;
+    showSubdialogConfirm({
+        title: `Supprimer la classe ${className}`,
+        desc: `Êtes-vous certain de vouloir supprimer la <strong>Classe ${className}</strong> ?<br><span style="color: var(--danger); font-size: 0.82rem;">Attention : les ${studentCount} élève(s) associés et leurs notes seront effacés.</span>`,
+        actionText: 'Oui, supprimer la classe',
+        onConfirm: async () => {
+            try {
+                const res = await fetch('/admin/delete-class', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ className })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAdminNotice(result.message);
+                    delete studentsByClassGlobal[className];
+                    populateAdminModalData();
+                    setTimeout(() => window.location.reload(), 600);
+                } else {
+                    showAdminNotice(result.message, true);
+                }
+            } catch (e) {
+                showAdminNotice('Erreur réseau lors de la suppression de classe.', true);
+            }
+        }
+    });
+}
+
+function openRenameStudentModal(className, oldName) {
+    showSubdialogPrompt({
+        title: `Modifier le nom de l'élève`,
+        desc: `Modification pour l'élève inscrit en <strong>Classe ${className}</strong> :`,
+        defaultValue: oldName,
+        placeholder: 'Prénom et Nom complet',
+        onConfirm: async (newName) => {
+            if (newName === oldName) return;
+            try {
+                const res = await fetch('/admin/update-student', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ className, oldName, newName })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAdminNotice(result.message);
+                    if (studentsByClassGlobal[className]) {
+                        const idx = studentsByClassGlobal[className].indexOf(oldName);
+                        if (idx !== -1) studentsByClassGlobal[className][idx] = newName;
+                    }
+                    populateAdminModalData();
+                    setTimeout(() => window.location.reload(), 600);
+                } else {
+                    showAdminNotice(result.message, true);
+                }
+            } catch (e) {
+                showAdminNotice('Erreur réseau lors de la mise à jour de l\'élève.', true);
+            }
+        }
+    });
+}
+
+function openTransferStudentModal(currentClass, studentName) {
+    showSubdialogTransfer({
+        studentName,
+        currentClass,
+        onConfirm: async (targetClass) => {
+            try {
+                const res = await fetch('/admin/update-student', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        className: currentClass,
+                        oldName: studentName,
+                        newName: studentName,
+                        targetClass: targetClass
+                    })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAdminNotice(`Élève transféré en classe ${targetClass}.`);
+                    if (studentsByClassGlobal[currentClass]) {
+                        studentsByClassGlobal[currentClass] = studentsByClassGlobal[currentClass].filter(s => s !== studentName);
+                    }
+                    if (!studentsByClassGlobal[targetClass]) studentsByClassGlobal[targetClass] = [];
+                    studentsByClassGlobal[targetClass].push(studentName);
+                    studentsByClassGlobal[targetClass].sort();
+                    populateAdminModalData();
+                    setTimeout(() => window.location.reload(), 600);
+                } else {
+                    showAdminNotice(result.message, true);
+                }
+            } catch (e) {
+                showAdminNotice('Erreur réseau lors du transfert.', true);
+            }
+        }
+    });
+}
+
+function openDeleteStudentModal(className, studentName) {
+    showSubdialogConfirm({
+        title: `Supprimer l'élève`,
+        desc: `Confirmez-vous le retrait de l'élève <strong>${studentName}</strong> de la classe <strong>${className}</strong> ?`,
+        actionText: 'Supprimer l\'élève',
+        onConfirm: async () => {
+            try {
+                const res = await fetch('/admin/delete-student', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ className, studentName })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAdminNotice(result.message);
+                    if (studentsByClassGlobal[className]) {
+                        studentsByClassGlobal[className] = studentsByClassGlobal[className].filter(s => s !== studentName);
+                    }
+                    populateAdminModalData();
+                    setTimeout(() => window.location.reload(), 600);
+                } else {
+                    showAdminNotice(result.message, true);
+                }
+            } catch (e) {
+                showAdminNotice('Erreur réseau lors de la suppression.', true);
+            }
+        }
+    });
+}
+
+// ------------------------------------
+// TAB 2 : CORPS ENSEIGNANT & MATIÈRES
+// ------------------------------------
+async function loadTeachersList() {
+    const container = document.getElementById('adminTeachersListContainer');
+    if (!container) return;
+
+    try {
+        const res = await fetch('/admin/get-teachers');
+        if (!res.ok) return;
+        const data = await res.json();
+        adminTeachersCache = data.teachers || [];
+        renderFilteredTeachers();
+    } catch (err) {
+        console.error('Erreur chargement enseignants:', err);
+    }
+}
+
+function renderFilteredTeachers() {
+    const container = document.getElementById('adminTeachersListContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const searchTerm = (document.getElementById('adminTeacherSearchInput')?.value || '').toLowerCase().trim();
+
+    const filtered = adminTeachersCache.filter(t => {
+        if (!searchTerm) return true;
+        const nameMatch = t.name.toLowerCase().includes(searchTerm);
+        const subjectsMatch = (t.assignments || []).some(a => (a.subject || '').toLowerCase().includes(searchTerm));
+        const classesMatch = (t.assignments || []).some(a => (a.classes || []).some(c => c.toLowerCase().includes(searchTerm)));
+        return nameMatch || subjectsMatch || classesMatch;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted); background: var(--surface-2); border-radius: 10px; border: 1px dashed var(--border);">
+                <i class="fas fa-users-slash" style="font-size: 1.5rem; opacity: 0.5; margin-bottom: 0.5rem; display: block;"></i>
+                <div style="font-size: 0.9rem; font-weight: 600;">Aucun enseignant trouvé</div>
+                <div style="font-size: 0.8rem; margin-top: 0.25rem;">${searchTerm ? 'Modifiez vos termes de recherche.' : 'Cliquez sur « Ajouter un Enseignant » pour en créer un.'}</div>
+            </div>
+        `;
+        return;
+    }
+
+    const tableWrapper = document.createElement('div');
+    tableWrapper.className = 'admin-table-wrapper';
+    tableWrapper.style.overflowX = 'auto';
+
+    let tableHtml = `
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Enseignant</th>
+                    <th style="width: 220px;">Identifiants</th>
+                    <th>Matière(s) Enseignée(s)</th>
+                    <th>Classes Assignées</th>
+                    <th style="width: 170px; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    filtered.forEach(t => {
+        const initials = getInitials(t.name);
+        const roleClass = t.isAdmin ? 'admin-role' : '';
+        const safeTeacherJson = JSON.stringify(t).replace(/'/g, "&#39;");
+
+        // Formatage des matières
+        let subjectsHtml = '';
+        let classesHtml = '';
+
+        if (t.isAdmin) {
+            subjectsHtml = '<span class="admin-badge admin-badge-subject"><i class="fas fa-unlock-alt"></i> Toutes matières</span>';
+            classesHtml = '<span class="admin-badge admin-badge-class">Toutes classes</span>';
+        } else if (t.assignments && t.assignments.length > 0) {
+            subjectsHtml = t.assignments.map(a => `<span class="admin-badge admin-badge-subject">${a.subject}</span>`).join(' ');
+            const allClasses = [...new Set(t.assignments.flatMap(a => a.classes || []))].sort();
+            classesHtml = allClasses.map(c => `<span class="admin-badge admin-badge-class">${c}</span>`).join(' ') || '<span style="color:var(--text-muted); font-size:0.75rem;">Aucune</span>';
+        } else {
+            subjectsHtml = '<span style="color:var(--text-muted); font-size:0.75rem;">Non assignée</span>';
+            classesHtml = '<span style="color:var(--text-muted); font-size:0.75rem;">Aucune</span>';
+        }
+
+        tableHtml += `
+            <tr>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span class="admin-avatar teacher-avatar ${roleClass}">${initials}</span>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                <strong style="color: var(--text-primary); font-size: 0.88rem;">${t.name}</strong>
+                                ${t.isAdmin ? '<span class="admin-badge admin-badge-admin">ADMIN</span>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                        <div style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem;">
+                            <span style="color: var(--text-muted); font-size: 0.68rem; font-weight: 700;">LOGIN</span>
+                            <code class="admin-cred-tag">${t.name}</code>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem;">
+                            <span style="color: var(--text-muted); font-size: 0.68rem; font-weight: 700;">MDP</span>
+                            <code class="admin-cred-tag">${t.password || t.name}</code>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;">
+                        ${subjectsHtml}
+                    </div>
+                </td>
+                <td>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                        ${classesHtml}
+                    </div>
+                </td>
+                <td style="text-align: right;">
+                    <div style="display: inline-flex; gap: 0.35rem; justify-content: flex-end;">
+                        <button type="button" class="admin-action-btn admin-action-edit" onclick='populateTeacherForEdit(${safeTeacherJson})' title="Modifier cet enseignant">
+                            <i class="fas fa-edit"></i> Modifier
+                        </button>
+                        ${!t.isAdmin ? `
+                            <button type="button" class="admin-action-btn admin-action-delete" onclick="openDeleteTeacherModal('${t.name.replace(/'/g, "\\'")}')" title="Supprimer cet enseignant">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    tableHtml += `
+            </tbody>
+        </table>
+    `;
+    tableWrapper.innerHTML = tableHtml;
+    container.appendChild(tableWrapper);
+}
+
+function populateTeacherForEdit(teacher) {
+    const panel = document.getElementById('panelAddTeacher');
+    if (panel) panel.style.display = 'block';
+
+    document.getElementById('oldTeacherName').value = teacher.name;
+    document.getElementById('teacherName').value = teacher.name;
+    document.getElementById('teacherPassword').value = teacher.password || '';
+
+    if (teacher.assignments && teacher.assignments.length > 0) {
+        document.getElementById('teacherSubject').value = teacher.assignments[0].subject || '';
+        document.getElementById('teacherClasses').value = (teacher.assignments[0].classes || []).join(', ');
+    } else {
+        document.getElementById('teacherSubject').value = '';
+        document.getElementById('teacherClasses').value = '';
+    }
+
+    const header = document.getElementById('teacherFormHeader');
+    if (header) {
+        header.innerHTML = `<i class="fas fa-user-edit" style="color: var(--primary);"></i><span>Modifier l'Enseignant « ${teacher.name} »</span>`;
+    }
+
+    const resetBtn = document.getElementById('resetTeacherFormBtn');
+    if (resetBtn) resetBtn.style.display = 'inline-block';
+
+    const saveBtn = document.getElementById('saveTeacherSubmitBtn');
+    if (saveBtn) {
+        saveBtn.innerHTML = '<i class="fas fa-check"></i><span>Mettre à jour l\'Enseignant</span>';
+    }
+
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('teacherName')?.focus();
+}
+
+function resetTeacherForm() {
+    document.getElementById('oldTeacherName').value = '';
+    document.getElementById('adminTeacherForm')?.reset();
+
+    const header = document.getElementById('teacherFormHeader');
+    if (header) {
+        header.innerHTML = `<i class="fas fa-user-plus" style="color: var(--primary);"></i><span>Ajouter un Enseignant</span>`;
+    }
+
+    const resetBtn = document.getElementById('resetTeacherFormBtn');
+    if (resetBtn) resetBtn.style.display = 'none';
+
+    const saveBtn = document.getElementById('saveTeacherSubmitBtn');
+    if (saveBtn) {
+        saveBtn.innerHTML = '<i class="fas fa-check"></i><span>Enregistrer l\'Enseignant</span>';
+    }
+}
+
+function openDeleteTeacherModal(teacherName) {
+    showSubdialogConfirm({
+        title: `Supprimer l'enseignant ${teacherName}`,
+        desc: `Êtes-vous certain de vouloir supprimer le compte de l'enseignant <strong>${teacherName}</strong> ? Ses accès au portail seront révoqués.`,
+        actionText: 'Supprimer l\'enseignant',
+        onConfirm: async () => {
+            try {
+                const res = await fetch('/admin/delete-teacher', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ teacherName })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAdminNotice(result.message);
+                    await loadTeachersList();
+                    setTimeout(() => window.location.reload(), 600);
+                } else {
+                    showAdminNotice(result.message, true);
+                }
+            } catch (e) {
+                showAdminNotice('Erreur réseau lors de la suppression.', true);
+            }
+        }
+    });
+}
+
+// Exposer globalement pour inline onclick
+window.openAdminModal = openAdminModal;
+window.closeAdminModal = closeAdminModal;
+window.openRenameClassModal = openRenameClassModal;
+window.openDeleteClassModal = openDeleteClassModal;
+window.openRenameStudentModal = openRenameStudentModal;
+window.openTransferStudentModal = openTransferStudentModal;
+window.openDeleteStudentModal = openDeleteStudentModal;
+window.quickEnrollStudent = quickEnrollStudent;
+window.populateTeacherForEdit = populateTeacherForEdit;
+window.openDeleteTeacherModal = openDeleteTeacherModal;
+window.resetTeacherForm = resetTeacherForm;
+
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        initAdminPanel();
+        bindAdminControlsOnce();
+    }, 350);
 });
 
 // ====================================

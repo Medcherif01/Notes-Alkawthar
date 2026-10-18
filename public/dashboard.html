@@ -251,185 +251,271 @@
     </div><!-- fin main-container -->
 
     <!-- ===== MODAL GÉNÉRATION RAPPORT OFFICIEL (HTML / PDF A4) ===== -->
-    <div id="reportModal" class="modern-progress" style="display: none; align-items: center; justify-content: center;">
-        <div class="progress-content" style="text-align: left; max-width: 480px; width: 92%; padding: 2rem; border-radius: var(--radius-md);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-                <h2 style="font-size: 1.15rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; margin: 0; font-weight: 700;">
-                    <i class="fas fa-print" style="color: var(--primary);"></i> Bulletin Officiel (HTML / PDF A4)
+    <div id="reportModal" class="admin-modal-overlay">
+        <div class="admin-modal-container" style="max-width: 500px;">
+            <div class="admin-modal-header">
+                <h2 class="admin-modal-title">
+                    <i class="fas fa-print"></i>
+                    <span>Bulletin Officiel (HTML / PDF A4)</span>
                 </h2>
-                <button type="button" id="closeReportModal" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-muted);">
+                <button type="button" id="closeReportModal" class="admin-modal-close" title="Fermer">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.45;">
-                Générez le registre académique officiel au format A4 haute fidélité avec en-tête de l'école, moyennes, mentions et zones de visa. Prêt pour impression ou export PDF.
-            </p>
+            <div class="admin-modal-body">
+                <p style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 1.25rem; line-height: 1.5;">
+                    Générez le registre académique officiel au format A4 haute fidélité avec en-tête de l'école, barème, mentions et zones de visa. Prêt pour impression ou export PDF.
+                </p>
 
-            <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
-                <div>
-                    <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
-                        Période Académique
-                    </label>
-                    <select id="reportSemesterSelect" class="modern-select" style="width: 100%;">
-                        <option value="S1">Semestre 1 (Septembre — Janvier)</option>
-                        <option value="S2">Semestre 2 (Février — Juin)</option>
-                    </select>
+                <div style="display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.5rem;">
+                    <div>
+                        <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
+                            Période Académique
+                        </label>
+                        <select id="reportSemesterSelect" class="modern-select" style="width: 100%;">
+                            <option value="S1">Semestre 1 (Septembre — Janvier)</option>
+                            <option value="S2">Semestre 2 (Février — Juin)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
+                            Classe à inclure
+                        </label>
+                        <select id="reportClassSelect" class="modern-select" style="width: 100%;">
+                            <option value="ALL">Toutes les Classes (Bulletin Complet)</option>
+                        </select>
+                    </div>
                 </div>
-                <div>
-                    <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
-                        Classe à imprimer
-                    </label>
-                    <select id="reportClassSelect" class="modern-select" style="width: 100%;">
-                        <option value="ALL">Toutes les Classes (Bulletin Complet)</option>
-                    </select>
-                </div>
-            </div>
 
-            <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
-                <button type="button" id="cancelReportModal" class="action-btn" style="background: var(--surface-2); border: 1px solid var(--border); color: var(--text-secondary);">
-                    Annuler
-                </button>
-                <button type="button" id="submitReportModal" class="submit-btn" style="display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.88rem;">
-                    <i class="fas fa-external-link-alt"></i>
-                    <span>Ouvrir & Imprimer PDF</span>
-                </button>
+                <div style="display: flex; gap: 0.6rem; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--border);">
+                    <button type="button" id="cancelReportModal" class="admin-btn admin-btn-secondary">
+                        Annuler
+                    </button>
+                    <button type="button" id="submitReportModal" class="admin-btn admin-btn-primary" style="padding: 0.5rem 1.2rem;">
+                        <i class="fas fa-file-pdf"></i>
+                        <span>Ouvrir &amp; Imprimer PDF</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- ===== MODAL ADMINISTRATION (ADMIN ONLY) ===== -->
-    <div id="adminModal" class="modern-progress" style="display: none; align-items: center; justify-content: center;">
-        <div class="progress-content" style="text-align: left; max-width: 720px; width: 94%; max-height: 88vh; overflow-y: auto; padding: 2rem; border-radius: var(--radius-md);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-                <h2 style="font-size: 1.25rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; margin: 0; font-weight: 800;">
-                    <i class="fas fa-user-shield" style="color: var(--primary);"></i> Administration — Al Kawthar
-                </h2>
-                <button type="button" id="closeAdminModal" style="background: none; border: none; font-size: 1.25rem; cursor: pointer; color: var(--text-muted);">
+    <!-- ===== MODAL ADMINISTRATION PRO (ADMIN ONLY) ===== -->
+    <div id="adminModal" class="admin-modal-overlay">
+        <div class="admin-modal-container" style="max-width: 960px;">
+            <div class="admin-modal-header">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <h2 class="admin-modal-title">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>Administration de l'Établissement</span>
+                    </h2>
+                    <span id="adminSectionBadge" class="admin-class-pill" style="background: #EEF2FF; color: #4F46E5;">Al Kawthar</span>
+                </div>
+                <button type="button" id="closeAdminModal" class="admin-modal-close" title="Fermer la console">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
 
-            <!-- Tabs -->
-            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; border-bottom: 2px solid var(--border); padding-bottom: 0.6rem;">
-                <button type="button" id="tabClassesStudents" class="semester-btn active" style="padding: 0.5rem 1.2rem; font-size: 0.85rem; font-weight: 700; cursor: pointer;">
-                    <i class="fas fa-users-class" style="margin-right: 0.4rem;"></i>Classes &amp; Élèves
+            <!-- Barre d'onglets Pro -->
+            <div class="admin-tab-nav">
+                <button type="button" id="tabClassesStudents" class="admin-tab-btn active">
+                    <i class="fas fa-user-graduate"></i>
+                    <span>Classes &amp; Élèves</span>
                 </button>
-                <button type="button" id="tabTeachersSubjects" class="semester-btn" style="padding: 0.5rem 1.2rem; font-size: 0.85rem; font-weight: 700; cursor: pointer;">
-                    <i class="fas fa-chalkboard-teacher" style="margin-right: 0.4rem;"></i>Enseignants &amp; Matières
+                <button type="button" id="tabTeachersSubjects" class="admin-tab-btn">
+                    <i class="fas fa-chalkboard-teacher"></i>
+                    <span>Enseignants &amp; Matières</span>
                 </button>
             </div>
 
-            <!-- Tab 1: Classes & Élèves -->
-            <div id="adminTab1Content">
-                <!-- Section Ajout Classe -->
-                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
-                    <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
-                        <i class="fas fa-plus-circle" style="color: var(--primary); margin-right: 0.3rem;"></i>Ajouter une Nouvelle Classe
-                    </h3>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" id="newClassName" placeholder="ex: PEI6, Terminale, etc." class="modern-input" style="flex: 1;">
-                        <button type="button" id="addClassBtn" class="submit-btn" style="padding: 0.5rem 1.2rem; font-size: 0.85rem;">
-                            Créer la Classe
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Section Ajout Élève -->
-                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem;">
-                    <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
-                        <i class="fas fa-user-plus" style="color: var(--success); margin-right: 0.3rem;"></i>Inscrire un Nouvel Élève
-                    </h3>
-                    <div style="display: flex; flex-direction: column; gap: 0.6rem;">
-                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                            <select id="adminStudentClassSelect" class="modern-select" style="min-width: 180px;">
-                                <option value="">Sélectionner une classe</option>
+            <!-- Corps de l'administration -->
+            <div class="admin-modal-body">
+                <!-- Onglet 1: Classes & Élèves -->
+                <div id="adminTab1Content">
+                    <!-- Barre d'actions & Filtres -->
+                    <div class="admin-toolbar">
+                        <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+                            <div class="admin-search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="adminStudentSearchInput" placeholder="Rechercher un élève ou classe...">
+                            </div>
+                            <select id="adminFilterClassView" class="modern-select" style="padding: 0.45rem 0.8rem; font-size: 0.84rem; min-width: 170px;">
+                                <option value="ALL">Afficher toutes les classes</option>
                             </select>
-                            <input type="text" id="newStudentName" placeholder="Prénom et Nom complet" class="modern-input" style="flex: 1; min-width: 200px;">
-                            <button type="button" id="addStudentBtn" class="submit-btn" style="padding: 0.5rem 1.2rem; font-size: 0.85rem; background: var(--success);">
-                                Inscrire l'Élève
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button type="button" id="toggleAddClassBtn" class="admin-btn admin-btn-secondary">
+                                <i class="fas fa-folder-plus"></i>
+                                <span>Nouvelle Classe</span>
+                            </button>
+                            <button type="button" id="toggleAddStudentBtn" class="admin-btn admin-btn-primary">
+                                <i class="fas fa-user-plus"></i>
+                                <span>Inscrire un Élève</span>
                             </button>
                         </div>
                     </div>
-                </div>
 
-                <!-- Répertoire des Classes et Élèves (Modification / Suppression / Transfert) -->
-                <div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
-                        <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);">
-                            <i class="fas fa-list-ol" style="margin-right: 0.3rem;"></i>Répertoire des Classes &amp; Élèves
-                        </h3>
-                        <span style="font-size: 0.75rem; color: var(--text-muted);">Cliquez pour modifier ou supprimer</span>
+                    <!-- Formulaire rétractable : Nouvelle Classe -->
+                    <div id="panelAddClass" class="admin-form-panel" style="display: none;">
+                        <div class="admin-panel-title">
+                            <i class="fas fa-plus"></i>
+                            <span>Créer une Nouvelle Classe</span>
+                        </div>
+                        <div style="display: flex; gap: 0.6rem; align-items: center;">
+                            <input type="text" id="newClassName" placeholder="Nom de la classe (ex: PEI6, Terminale...)" class="modern-input" style="flex: 1;">
+                            <button type="button" id="addClassBtn" class="admin-btn admin-btn-primary" style="padding: 0.55rem 1.2rem;">
+                                Valider la création
+                            </button>
+                            <button type="button" id="cancelAddClassBtn" class="admin-btn admin-btn-secondary">
+                                Annuler
+                            </button>
+                        </div>
                     </div>
-                    <div id="adminStudentsListContainer" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 280px; overflow-y: auto; padding-right: 4px;">
+
+                    <!-- Formulaire rétractable : Nouvel Élève -->
+                    <div id="panelAddStudent" class="admin-form-panel" style="display: none;">
+                        <div class="admin-panel-title">
+                            <i class="fas fa-user-plus"></i>
+                            <span>Inscrire un Élève dans une Classe</span>
+                        </div>
+                        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center;">
+                            <select id="adminStudentClassSelect" class="modern-select" style="min-width: 180px; flex: 1;">
+                                <option value="">Sélectionner la classe</option>
+                            </select>
+                            <input type="text" id="newStudentName" placeholder="Prénom et Nom de l'élève" class="modern-input" style="flex: 2; min-width: 200px;">
+                            <button type="button" id="addStudentBtn" class="admin-btn admin-btn-primary" style="padding: 0.55rem 1.2rem;">
+                                Inscrire
+                            </button>
+                            <button type="button" id="cancelAddStudentBtn" class="admin-btn admin-btn-secondary">
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Conteneur des répertoires de classes -->
+                    <div id="adminStudentsListContainer">
                         <!-- Rempli dynamiquement -->
                     </div>
                 </div>
-            </div>
 
-            <!-- Tab 2: Enseignants & Matières -->
-            <div id="adminTab2Content" style="display: none;">
-                <!-- Formulaire Enseignant -->
-                <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
-                        <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary);" id="teacherFormHeader">
-                            <i class="fas fa-user-edit" style="color: var(--primary); margin-right: 0.3rem;"></i>Ajouter ou Modifier un Enseignant
-                        </h3>
-                        <button type="button" id="resetTeacherFormBtn" style="display: none; background: none; border: none; color: var(--primary); font-size: 0.78rem; font-weight: 600; cursor: pointer;">
-                            <i class="fas fa-undo"></i> Réinitialiser (Nouveau)
+                <!-- Onglet 2: Enseignants & Matières -->
+                <div id="adminTab2Content" style="display: none;">
+                    <div class="admin-toolbar">
+                        <div class="admin-search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="adminTeacherSearchInput" placeholder="Rechercher un enseignant ou matière...">
+                        </div>
+                        <button type="button" id="toggleAddTeacherBtn" class="admin-btn admin-btn-primary">
+                            <i class="fas fa-user-plus"></i>
+                            <span>Ajouter un Enseignant</span>
                         </button>
                     </div>
 
-                    <form id="adminTeacherForm" style="display: flex; flex-direction: column; gap: 0.75rem;">
-                        <input type="hidden" id="oldTeacherName" value="">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                            <div>
-                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
-                                    Identifiant Enseignant (Login)
-                                </label>
-                                <input type="text" id="teacherName" placeholder="ex: Sami, M. Dupont" required class="modern-input" style="width: 100%;">
+                    <!-- Formulaire Ajout / Édition Enseignant -->
+                    <div id="panelAddTeacher" class="admin-form-panel" style="display: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+                            <div class="admin-panel-title" id="teacherFormHeader" style="margin: 0;">
+                                <i class="fas fa-user-edit"></i>
+                                <span>Ajouter un Enseignant</span>
                             </div>
-                            <div>
-                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
-                                    Mot de passe
-                                </label>
-                                <input type="text" id="teacherPassword" placeholder="Laisser vide = identique au nom" class="modern-input" style="width: 100%;">
-                            </div>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 0.75rem;">
-                            <div>
-                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
-                                    Matière enseignée
-                                </label>
-                                <input type="text" id="teacherSubject" placeholder="ex: Mathématiques" required class="modern-input" style="width: 100%;">
-                            </div>
-                            <div>
-                                <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem;">
-                                    Classes assignées (séparées par virgules)
-                                </label>
-                                <input type="text" id="teacherClasses" placeholder="ex: PEI1, PEI2, PEI3" required class="modern-input" style="width: 100%;">
-                            </div>
-                        </div>
-                        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem;">
-                            <button type="submit" id="saveTeacherSubmitBtn" class="submit-btn" style="padding: 0.5rem 1.4rem; font-size: 0.85rem;">
-                                <i class="fas fa-save" style="margin-right: 0.3rem;"></i>Enregistrer l'Enseignant
+                            <button type="button" id="resetTeacherFormBtn" class="admin-btn admin-btn-secondary" style="font-size: 0.75rem;">
+                                Réinitialiser
                             </button>
                         </div>
-                    </form>
-                </div>
 
-                <!-- Liste des Enseignants enregistrés -->
-                <div>
-                    <h3 style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.6rem;">
-                        <i class="fas fa-chalkboard" style="margin-right: 0.3rem;"></i>Corps Enseignant Enregistré
-                    </h3>
-                    <div id="adminTeachersListContainer" style="display: flex; flex-direction: column; gap: 0.6rem; max-height: 240px; overflow-y: auto;">
+                        <form id="adminTeacherForm" style="display: flex; flex-direction: column; gap: 0.85rem;">
+                            <input type="hidden" id="oldTeacherName" value="">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem;">
+                                <div>
+                                    <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.25rem;">
+                                        Identifiant / Login <span style="color: var(--danger);">*</span>
+                                    </label>
+                                    <input type="text" id="teacherName" placeholder="Nom exact (ex: Sami, M. Dupont)" required class="modern-input" style="width: 100%;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.25rem;">
+                                        Mot de passe
+                                    </label>
+                                    <input type="text" id="teacherPassword" placeholder="Laisser vide = identique au login" class="modern-input" style="width: 100%;">
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1.3fr; gap: 0.85rem;">
+                                <div>
+                                    <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.25rem;">
+                                        Matière enseignée <span style="color: var(--danger);">*</span>
+                                    </label>
+                                    <input type="text" id="teacherSubject" placeholder="ex: Mathématiques" required class="modern-input" style="width: 100%;">
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.25rem;">
+                                        Classes assignées (séparées par des virgules) <span style="color: var(--danger);">*</span>
+                                    </label>
+                                    <input type="text" id="teacherClasses" placeholder="ex: PEI1, PEI2, PEI3" required class="modern-input" style="width: 100%;">
+                                </div>
+                            </div>
+
+                            <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem;">
+                                <button type="button" id="closeTeacherPanelBtn" class="admin-btn admin-btn-secondary">
+                                    Fermer
+                                </button>
+                                <button type="submit" id="saveTeacherSubmitBtn" class="admin-btn admin-btn-primary">
+                                    <i class="fas fa-check"></i>
+                                    <span>Enregistrer l'Enseignant</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Tableau des Enseignants -->
+                    <div id="adminTeachersListContainer">
                         <!-- Rempli dynamiquement -->
                     </div>
                 </div>
-            </div>
 
-            <div id="adminMessage" style="margin-top: 1rem; font-size: 0.85rem; font-weight: 700; text-align: center; min-height: 1.2rem;"></div>
+                <div id="adminMessage" style="margin-top: 0.8rem; font-size: 0.84rem; font-weight: 700; text-align: center; min-height: 1.2rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SOUS-DIALOGUE IN-APP : RENOMMER ÉLÈVE OU CLASSE ===== -->
+    <div id="adminPromptDialog" class="admin-subdialog-overlay">
+        <div class="admin-subdialog-card">
+            <h3 id="adminPromptTitle" class="admin-subdialog-title">Renommer</h3>
+            <p id="adminPromptDesc" class="admin-subdialog-desc">Entrez le nouveau nom :</p>
+            <input type="text" id="adminPromptInput" class="modern-input" style="width: 100%;">
+            <div class="admin-subdialog-actions">
+                <button type="button" id="adminPromptCancelBtn" class="admin-btn admin-btn-secondary">Annuler</button>
+                <button type="button" id="adminPromptConfirmBtn" class="admin-btn admin-btn-primary">Valider</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SOUS-DIALOGUE IN-APP : TRANSFÉRER ÉLÈVE ===== -->
+    <div id="adminTransferDialog" class="admin-subdialog-overlay">
+        <div class="admin-subdialog-card">
+            <h3 class="admin-subdialog-title">Transférer l'Élève</h3>
+            <p id="adminTransferDesc" class="admin-subdialog-desc">Sélectionnez la classe de destination :</p>
+            <select id="adminTransferSelect" class="modern-select" style="width: 100%;">
+                <!-- Rempli dynamiquement -->
+            </select>
+            <div class="admin-subdialog-actions">
+                <button type="button" id="adminTransferCancelBtn" class="admin-btn admin-btn-secondary">Annuler</button>
+                <button type="button" id="adminTransferConfirmBtn" class="admin-btn admin-btn-teal">Confirmer le Transfert</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SOUS-DIALOGUE IN-APP : CONFIRMATION DE SUPPRESSION ===== -->
+    <div id="adminConfirmDialog" class="admin-subdialog-overlay">
+        <div class="admin-subdialog-card">
+            <h3 id="adminConfirmTitle" class="admin-subdialog-title" style="color: var(--danger);">Confirmer la suppression</h3>
+            <p id="adminConfirmDesc" class="admin-subdialog-desc">Cette action est irréversible.</p>
+            <div class="admin-subdialog-actions">
+                <button type="button" id="adminConfirmCancelBtn" class="admin-btn admin-btn-secondary">Annuler</button>
+                <button type="button" id="adminConfirmActionBtn" class="admin-btn admin-btn-danger">Supprimer définitivement</button>
+            </div>
         </div>
     </div>
 

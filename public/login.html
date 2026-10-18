@@ -57,14 +57,6 @@
                 <span>Se Connecter</span>
             </button>
 
-            <div style="margin-top: 18px; padding: 10px 14px; background: rgba(0,0,0,0.03); border: 1px dashed rgba(0,0,0,0.12); border-radius: 8px; font-size: 11.5px; color: #475569; text-align: left;">
-                <div style="font-weight: 700; color: #1E293B; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
-                    <span><i class="fas fa-key" style="margin-right: 5px;"></i> Accès Rapides Démo</span>
-                    <span style="font-size: 10px; cursor: pointer; color: #2563EB;" onclick="fillLogin('Mohamed', 'Mohamed')">Admin Auto</span>
-                </div>
-                <div>• <strong>Admin :</strong> Mohamed / Mohamed (ou Zohra / Zohra)</div>
-                <div>• <strong>Enseignants :</strong> Identifiant = Mot de passe (ex: Sami, Abas, Sylvano)</div>
-            </div>
 
             <p id="errorMessage" class="error-message"></p>
         </form>
@@ -92,11 +84,6 @@
             this.classList.toggle('fa-eye', !show);
         });
 
-        // ---- Remplissage rapide ----
-        window.fillLogin = function(u, p) {
-            document.getElementById('username').value = u;
-            document.getElementById('password').value = p;
-        };
 
         // ---- Formulaire login ----
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
