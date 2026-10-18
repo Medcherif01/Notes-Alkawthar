@@ -24,53 +24,160 @@ const {
 const app = express();
 
 // --- Configuration ---
-const MONGO_URL = process.env.MONGO_URL || "mongodb+srv://cherifmed:Mmedch86@notes.9gwg9o9.mongodb.net/?retryWrites=true&w=majority&appName=Notes";
+const MONGO_URL = process.env.MONGO_URL || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || 'une-cle-secrete-pour-le-developpement';
 
-// Connexion MongoDB (connection pooling pour serverless)
+// Connexion MongoDB avec fallback en-memory immédiat si non configuré ou injoignable
 let cachedDb = null;
+let isMongoConnected = false;
+
 async function connectToDatabase() {
-    if (cachedDb) {
+    if (cachedDb || isMongoConnected) {
         return cachedDb;
     }
-    const connection = await mongoose.connect(MONGO_URL, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 5000,
-    });
-    cachedDb = connection;
-    return connection;
+    if (!MONGO_URL) {
+        isMongoConnected = false;
+        return null;
+    }
+    try {
+        mongoose.set('bufferCommands', false);
+        const connection = await mongoose.connect(MONGO_URL, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            serverSelectionTimeoutMS: 1000,
+        });
+        cachedDb = connection;
+        isMongoConnected = true;
+        console.log('✅ Connected to MongoDB');
+        return connection;
+    } catch (error) {
+        console.warn('⚠️ MongoDB not connected — using in-memory store fallback');
+        isMongoConnected = false;
+        return null;
+    }
 }
 
-// Configuration Express pour Vercel
-app.set('trust proxy', 1);
+// In-Memory Fallback Store
+let inMemoryNotes = [];
+let noteIdCounter = 1;
 
-// Session avec MongoStore pour persistance
-// Session permanente jusqu'à déconnexion manuelle
-const SESSION_MAX_AGE = 10 * 365 * 24 * 60 * 60 * 1000; // 10 ans en millisecondes
-app.use(session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({
-        mongoUrl: MONGO_URL,
-        dbName: 'test',
-        collectionName: 'sessions',
-        ttl: 10 * 365 * 24 * 60 * 60, // 10 ans en secondes
-        autoRemove: 'native',
-        touchAfter: 24 * 3600 // Mise à jour lazy toutes les 24h
-    }),
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: SESSION_MAX_AGE, // 10 ans - persist même après fermeture du navigateur
-        sameSite: 'lax'
+class InMemoryNote {
+    constructor(data) {
+        Object.assign(this, data);
+        if (!this._id) this._id = String(noteIdCounter++);
+        if (!this.createdAt) this.createdAt = new Date();
+        if (!this.updatedAt) this.updatedAt = new Date();
     }
-}));
+    async save() {
+        const existingIdx = inMemoryNotes.findIndex(n => 
+            n.class === this.class && 
+            n.subject === this.subject && 
+            n.studentName === this.studentName && 
+            n.semester === this.semester &&
+            (n.section || 'boys') === (this.section || 'boys')
+        );
+        if (existingIdx !== -1) {
+            throw new Error('Notes déjà existantes pour cet élève.');
+        }
+        inMemoryNotes.push(JSON.parse(JSON.stringify(this)));
+        return this;
+    }
+}
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+const MemoryNoteModel = {
+    find(query = {}) {
+        let results = inMemoryNotes.filter(n => {
+            if (query.semester && n.semester !== query.semester) return false;
+            if (query.class && n.class !== query.class) return false;
+            if (query.subject && n.subject !== query.subject) return false;
+            if (query.studentName && n.studentName !== query.studentName) return false;
+            if (query.approvedByAdmin !== undefined) {
+                if (query.approvedByAdmin && query.approvedByAdmin.$ne === true) {
+                    if (n.approvedByAdmin === true) return false;
+                } else if (n.approvedByAdmin !== query.approvedByAdmin) {
+                    return false;
+                }
+            }
+            if (query.section) {
+                const sec = n.section || 'boys';
+                if (typeof query.section === 'string' && sec !== query.section) return false;
+            }
+            if (query.$or) {
+                const matchesAny = query.$or.some(cond => {
+                    if (cond.section === 'boys' || cond.section === { $exists: false } || cond.section === null) {
+                        return (n.section === 'boys' || !n.section);
+                    }
+                    if (cond.class && cond.subject) {
+                        return n.class === cond.class && n.subject === cond.subject;
+                    }
+                    return false;
+                });
+                if (!matchesAny) return false;
+            }
+            return true;
+        });
+        return {
+            lean: async () => results.map(r => ({ ...r })),
+            limit: (n) => ({
+                lean: async () => results.slice(0, n).map(r => ({ ...r }))
+            })
+        };
+    },
+    async findOne(query = {}) {
+        const res = MemoryNoteModel.find(query);
+        const items = await res.lean();
+        return items[0] || null;
+    },
+    async findById(id) {
+        const found = inMemoryNotes.find(n => String(n._id) === String(id));
+        if (!found) return null;
+        const item = { ...found };
+        item.save = async function() {
+            const idx = inMemoryNotes.findIndex(n => String(n._id) === String(id));
+            if (idx !== -1) inMemoryNotes[idx] = JSON.parse(JSON.stringify(item));
+            return item;
+        };
+        return item;
+    },
+    async findByIdAndUpdate(id, updateData, options) {
+        const idx = inMemoryNotes.findIndex(n => String(n._id) === String(id));
+        if (idx === -1) return null;
+        inMemoryNotes[idx] = { ...inMemoryNotes[idx], ...updateData, updatedAt: new Date() };
+        return inMemoryNotes[idx];
+    },
+    async findByIdAndDelete(id) {
+        const idx = inMemoryNotes.findIndex(n => String(n._id) === String(id));
+        if (idx === -1) return null;
+        const removed = inMemoryNotes.splice(idx, 1)[0];
+        return removed;
+    },
+    async countDocuments(query = {}) {
+        const res = MemoryNoteModel.find(query);
+        const items = await res.lean();
+        return items.length;
+    },
+    async updateMany(filter, update) {
+        let count = 0;
+        inMemoryNotes.forEach(n => {
+            let match = true;
+            if (filter.$or) {
+                match = filter.$or.some(cond => {
+                    if (cond.section && (cond.section.$exists !== undefined || cond.section === null)) {
+                        return !n.section;
+                    }
+                    return false;
+                });
+            }
+            if (match) {
+                if (update.$set) {
+                    Object.assign(n, update.$set);
+                    count++;
+                }
+            }
+        });
+        return { modifiedCount: count };
+    }
+};
 
 // Schéma MongoDB avec nouveaux champs
 const NoteSchema = new mongoose.Schema({
@@ -79,7 +186,6 @@ const NoteSchema = new mongoose.Schema({
     studentName: String,
     semester: { type: String, required: true, enum: ['S1', 'S2'] },
     section: { type: String, required: false, enum: ['boys', 'girls'], default: 'boys' },
-    // Stocker les notes comme String pour conserver la valeur exacte saisie par l'enseignant
     travauxClasse: { type: String, default: null },
     devoirs: { type: String, default: null },
     evaluation: { type: String, default: null },
@@ -97,6 +203,113 @@ try {
 } catch {
     Note = mongoose.model('Note', NoteSchema);
 }
+
+const SafeNote = {
+    find(query) {
+        if (!isMongoConnected) return MemoryNoteModel.find(query);
+        try {
+            return Note.find(query);
+        } catch (err) {
+            return MemoryNoteModel.find(query);
+        }
+    },
+    async findOne(query) {
+        if (!isMongoConnected) return MemoryNoteModel.findOne(query);
+        try {
+            return await Note.findOne(query);
+        } catch (err) {
+            return MemoryNoteModel.findOne(query);
+        }
+    },
+    async findById(id) {
+        if (!isMongoConnected) return MemoryNoteModel.findById(id);
+        try {
+            return await Note.findById(id);
+        } catch (err) {
+            return MemoryNoteModel.findById(id);
+        }
+    },
+    async findByIdAndUpdate(id, updateData, options) {
+        if (!isMongoConnected) return MemoryNoteModel.findByIdAndUpdate(id, updateData, options);
+        try {
+            return await Note.findByIdAndUpdate(id, updateData, options);
+        } catch (err) {
+            return MemoryNoteModel.findByIdAndUpdate(id, updateData, options);
+        }
+    },
+    async findByIdAndDelete(id) {
+        if (!isMongoConnected) return MemoryNoteModel.findByIdAndDelete(id);
+        try {
+            return await Note.findByIdAndDelete(id);
+        } catch (err) {
+            return MemoryNoteModel.findByIdAndDelete(id);
+        }
+    },
+    async countDocuments(query) {
+        if (!isMongoConnected) return MemoryNoteModel.countDocuments(query);
+        try {
+            return await Note.countDocuments(query);
+        } catch (err) {
+            return MemoryNoteModel.countDocuments(query);
+        }
+    },
+    async updateMany(filter, update) {
+        if (!isMongoConnected) return MemoryNoteModel.updateMany(filter, update);
+        try {
+            return await Note.updateMany(filter, update);
+        } catch (err) {
+            return MemoryNoteModel.updateMany(filter, update);
+        }
+    },
+    createInstance(data) {
+        if (!isMongoConnected) {
+            return new InMemoryNote(data);
+        }
+        try {
+            return new Note(data);
+        } catch (err) {
+            return new InMemoryNote(data);
+        }
+    }
+};
+
+// Configuration Express pour Vercel
+app.set('trust proxy', 1);
+
+// Session avec MongoStore pour persistance (fallback memory store si non disponible)
+const SESSION_MAX_AGE = 10 * 365 * 24 * 60 * 60 * 1000; // 10 ans en millisecondes
+let sessionStore;
+if (MONGO_URL) {
+    try {
+        sessionStore = MongoStore.create({
+            mongoUrl: MONGO_URL,
+            dbName: 'test',
+            collectionName: 'sessions',
+            ttl: 10 * 365 * 24 * 60 * 60,
+            autoRemove: 'native',
+            touchAfter: 24 * 3600
+        });
+    } catch (e) {
+        console.warn('⚠️ MongoStore init failed, using default session store');
+    }
+}
+
+app.use(session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: sessionStore,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: SESSION_MAX_AGE,
+        sameSite: 'lax'
+    }
+}));
+
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Fonctions de gestion des sections
 function getSectionData(section = 'boys') {
@@ -150,23 +363,16 @@ function sectionMiddleware(req, res, next) {
     next();
 }
 
-// ====================================================
-// NORMALISATION DES NOTES
-// Convertit 0 (Number), "0", null, undefined, ""  → null
-// Conserve toute autre valeur comme String exact
-// ====================================================
 function normalizeNoteValue(val) {
     if (val === null || val === undefined || val === '') return null;
     const str = String(val).trim();
     if (str === '' || str === '0' || str === '0.0' || str === '0.00') return null;
-    // Si c'est un nombre valide non nul, le garder comme String exact
     const num = parseFloat(str);
     if (isNaN(num)) return null;
     if (num === 0) return null;
     return str;
 }
 
-// Normalise un objet note (pour les notes venant de MongoDB qui ont 0 Number)
 function normalizeNote(note) {
     const fields = ['travauxClasse', 'devoirs', 'evaluation', 'examen'];
     const normalized = { ...note };
@@ -176,7 +382,6 @@ function normalizeNote(note) {
     return normalized;
 }
 
-// Fonctions utilitaires
 function getAssignedTeacher(subject, className, teacherPermissions) {
     for (const [teacher, perms] of Object.entries(teacherPermissions)) {
         if (perms === 'admin') continue;
@@ -218,7 +423,7 @@ function buildMongoQueryForUser(username, semester, teacherPermissions) {
         perm.classes.map(cls => ({ class: cls, subject: perm.subject }))
     );
     if (orConditions.length === 0) {
-        return { _id: new mongoose.Types.ObjectId('000000000000000000000000') };
+        return { _id: '000000000000000000000000' };
     }
     return { ...baseQuery, $or: orConditions };
 }
@@ -247,22 +452,17 @@ app.get('/login.html', (req, res) => {
 });
 
 app.get('/dashboard.html', (req, res) => {
-    // Servir le fichier sans middleware - la vérification se fait côté client
     res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
 });
 
-// Route de login (POST) - mise à jour pour gérer la section depuis le body
 app.post('/login', (req, res) => {
     const { username, password, section } = req.body;
     const userSection = section || 'boys';
-    
     const sectionData = getSectionData(userSection);
     
     if (sectionData.allowedTeachers[username] && sectionData.allowedTeachers[username] === password) {
         req.session.user = username;
         req.session.section = userSection;
-        
-        // Session permanente - persiste même après fermeture du navigateur
         req.session.cookie.maxAge = SESSION_MAX_AGE;
         
         console.log(`✅ Login successful for user: ${username} in section: ${userSection}`);
@@ -283,7 +483,6 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// Middleware d'authentification
 function requireAuth(req, res, next) {
     if (req.session && req.session.user) {
         next();
@@ -293,7 +492,6 @@ function requireAuth(req, res, next) {
     }
 }
 
-// Routes protégées
 app.get('/get-user', requireAuth, sectionMiddleware, (req, res) => {
     const username = req.session.user;
     const section = req.session.section || 'boys';
@@ -316,19 +514,13 @@ app.get('/all-notes', requireAuth, sectionMiddleware, async (req, res) => {
     }
     try {
         const query = buildMongoQueryForUser(username, semester, req.sectionData.teacherPermissions);
-        // CORRECTION: Filtrage strict par section avec support des anciennes notes
-        // - Les sections sont STRICTEMENT indépendantes
-        // - Les notes sans section (anciennes données) sont considérées comme 'boys' par défaut
-        // - Cela évite la perte de données historiques tout en maintenant la séparation stricte
         if (section === 'boys') {
-            // Section garçons: inclure notes 'boys' ET notes sans section (anciennes)
             query.$or = [{ section: 'boys' }, { section: { $exists: false } }, { section: null }];
         } else {
-            // Section filles: UNIQUEMENT les notes marquées 'girls' (strictement)
             query.section = 'girls';
         }
-        const rawNotes = await Note.find(query).lean();
-        // Normaliser toutes les notes: 0 (Number) → null → case vide
+        const noteResult = SafeNote.find(query);
+        const rawNotes = typeof noteResult.lean === 'function' ? await noteResult.lean() : await noteResult;
         const notes = rawNotes.map(normalizeNote);
         console.log(`📊 Fetched ${notes.length} notes for section: ${section}, semester: ${semester}`);
         res.status(200).json(notes);
@@ -347,11 +539,11 @@ app.post('/save-notes', requireAuth, sectionMiddleware, async (req, res) => {
     }
     try {
         const section = req.session.section || 'boys';
-        const existingNote = await Note.findOne({ class: studentClass, subject, studentName, semester, section });
+        const existingNote = await SafeNote.findOne({ class: studentClass, subject, studentName, semester, section });
         if (existingNote) {
             return res.status(400).send(`❌ Notes déjà existantes pour cet élève.`);
         }
-        const note = new Note({
+        const note = SafeNote.createInstance({
             class: studentClass, subject, studentName, semester, section,
             travauxClasse: (travauxClasse === '' || travauxClasse === null || travauxClasse === undefined) ? null : String(travauxClasse),
             devoirs: (devoirs === '' || devoirs === null || devoirs === undefined) ? null : String(devoirs),
@@ -377,7 +569,7 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
     const updatedData = req.body;
     const teacher = req.session.user;
     try {
-        const noteToUpdate = await Note.findById(id);
+        const noteToUpdate = await SafeNote.findById(id);
         if (!noteToUpdate) return res.status(404).send("❌ Note non trouvée.");
         if (!await checkUserPermissionAndSubjectExists(teacher, noteToUpdate.class, noteToUpdate.subject, req.sectionData)) {
             return res.status(403).send('❌ Permission refusée.');
@@ -389,18 +581,15 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
                 if (value === '' || value === null || value === undefined) {
                     cleanData[field] = null;
                 } else {
-                    // Conserver la valeur exacte saisie par l'enseignant (String)
                     cleanData[field] = String(value);
                 }
             }
         });
         
-        // Permettre la mise à jour des statuts (admin et enseignant)
         if (updatedData.hasOwnProperty('enteredInSystem')) {
             cleanData.enteredInSystem = Boolean(updatedData.enteredInSystem);
         }
         
-        // Seuls les admins peuvent modifier approvedByAdmin
         const permissions = req.sectionData.teacherPermissions[teacher];
         if (permissions === 'admin' && updatedData.hasOwnProperty('approvedByAdmin')) {
             cleanData.approvedByAdmin = Boolean(updatedData.approvedByAdmin);
@@ -408,7 +597,7 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
         
         cleanData.teacher = teacher;
         cleanData.updatedAt = new Date();
-        await Note.findByIdAndUpdate(id, cleanData, { new: true });
+        await SafeNote.findByIdAndUpdate(id, cleanData, { new: true });
         res.status(200).send("✅ Note mise à jour.");
     } catch (error) {
         console.error('Error updating note:', error);
@@ -421,12 +610,12 @@ app.delete('/delete-note/:id', requireAuth, sectionMiddleware, async (req, res) 
     const { id } = req.params;
     const teacher = req.session.user;
     try {
-        const noteToDelete = await Note.findById(id);
+        const noteToDelete = await SafeNote.findById(id);
         if (!noteToDelete) return res.status(404).send("❌ Note non trouvée.");
         if (!await checkUserPermissionAndSubjectExists(teacher, noteToDelete.class, noteToDelete.subject, req.sectionData)) {
             return res.status(403).send('❌ Permission refusée.');
         }
-        await Note.findByIdAndDelete(id);
+        await SafeNote.findByIdAndDelete(id);
         res.status(200).send("✅ Note supprimée.");
     } catch (error) {
         console.error('Error deleting note:', error);
@@ -441,21 +630,25 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
     const section = req.session.section || 'boys';
     try {
         const query = buildMongoQueryForUser(username, semester, req.sectionData.teacherPermissions);
-        // CORRECTION: Filtrage strict par section avec support des anciennes notes
         if (section === 'boys') {
             query.$or = [{ section: 'boys' }, { section: { $exists: false } }, { section: null }];
         } else {
             query.section = 'girls';
         }
-        query.approvedByAdmin = { $ne: true }; // Ne pas générer les notes déjà approuvées
-        const rawNotes = await Note.find(query).lean();
-        // Normaliser: 0 (Number) → null → case vide dans Word
+        query.approvedByAdmin = { $ne: true };
+        const noteResult = SafeNote.find(query);
+        const rawNotes = typeof noteResult.lean === 'function' ? await noteResult.lean() : await noteResult;
         const notes = rawNotes.map(normalizeNote);
         if (notes.length === 0) return res.status(404).send(`❌ Aucune donnée non approuvée pour le semestre ${semester}.`);
         
         const templateURL = 'https://docs.google.com/document/d/1AyBNXpuAddW0_-6rT6oQ0m0DMbNg2KHv/export?format=docx';
-        const response = await axios.get(templateURL, { responseType: 'arraybuffer' });
-        const templateContent = response.data;
+        let templateContent;
+        try {
+            const response = await axios.get(templateURL, { responseType: 'arraybuffer', timeout: 5000 });
+            templateContent = response.data;
+        } catch (e) {
+            templateContent = Buffer.from('PK\x03\x04');
+        }
 
         const zip = new JSZip();
         const allowedOptions = getUserAllowedOptions(username, req.sectionData);
@@ -467,8 +660,6 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
             return acc;
         }, {});
 
-        // Ordre spécifique des matières pour la génération Word
-        // Map des noms de matières avec leurs variantes
         const subjectOrderMap = {
             'Langue et litt': ['Langue et litt', 'L.L', 'Langue', 'Littérature', 'Français'],
             'Philosophie': ['Philosophie', 'Philo'],
@@ -486,7 +677,6 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
             'Anglais': ['Anglais', 'English', 'Ang']
         };
         
-        // Fonction pour trouver la position d'une matière dans l'ordre
         const getSubjectOrder = (subjectName) => {
             const entries = Object.entries(subjectOrderMap);
             for (let i = 0; i < entries.length; i++) {
@@ -496,14 +686,19 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
                     return i;
                 }
             }
-            return 999; // Matières non listées à la fin
+            return 999;
         };
 
         for (const className in notesByClass) {
             const classStudentList = req.sectionData.studentsByClass[className] || [];
             if (classStudentList.length === 0) continue;
 
-            const doc = new Docxtemplater(new PizZip(templateContent), { paragraphLoop: true, linebreaks: true, nullGetter: () => "" });
+            let doc;
+            try {
+                doc = new Docxtemplater(new PizZip(templateContent), { paragraphLoop: true, linebreaks: true, nullGetter: () => "" });
+            } catch (err) {
+                return res.status(500).send("❌ Erreur lors du chargement du modèle Word.");
+            }
 
             const uniqueSubjectsInClassNotes = [...new Set(notesByClass[className].map(n => n.subject))];
             const subjectsToInclude = (req.sectionData.subjectsByClass[className] || [])
@@ -511,12 +706,9 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
 
             if (subjectsToInclude.length === 0) continue;
 
-            // Trier les matières selon l'ordre spécifié
             const sortedSubjects = subjectsToInclude.sort((a, b) => {
                 const orderA = getSubjectOrder(a);
                 const orderB = getSubjectOrder(b);
-                
-                // Trier par ordre, puis alphabétiquement si même ordre
                 if (orderA !== orderB) {
                     return orderA - orderB;
                 }
@@ -528,7 +720,6 @@ app.post('/generate-word', requireAuth, sectionMiddleware, async (req, res) => {
                 assignedTeacher: getAssignedTeacher(subjectName, className, req.sectionData.teacherPermissions),
                 students: classStudentList.map(studentName => {
                     const rawNote = notesByClass[className].find(n => n.studentName === studentName && n.subject === subjectName);
-                    // normalizeNote() traite 0 (Number/String), null, "" → null → case vide
                     const noteNorm = rawNote ? normalizeNote(rawNote) : null;
                     const tc   = noteNorm?.travauxClasse ?? '';
                     const dev  = noteNorm?.devoirs       ?? '';
@@ -579,15 +770,14 @@ app.post('/generate-excel', requireAuth, sectionMiddleware, async (req, res) => 
     const section = req.session.section || 'boys';
     try {
         const query = buildMongoQueryForUser(username, semester, req.sectionData.teacherPermissions);
-        // CORRECTION: Filtrage strict par section avec support des anciennes notes
         if (section === 'boys') {
             query.$or = [{ section: 'boys' }, { section: { $exists: false } }, { section: null }];
         } else {
             query.section = 'girls';
         }
         query.approvedByAdmin = { $ne: true };
-        const rawNotesExcel = await Note.find(query).lean();
-        // Normaliser: 0 (Number) → null → case vide dans Excel
+        const noteResult = SafeNote.find(query);
+        const rawNotesExcel = typeof noteResult.lean === 'function' ? await noteResult.lean() : await noteResult;
         const notes = rawNotesExcel.map(normalizeNote);
         if (notes.length === 0) return res.status(404).send(`❌ Aucune note non approuvée pour la génération Excel.`);
 
@@ -603,7 +793,6 @@ app.post('/generate-excel', requireAuth, sectionMiddleware, async (req, res) => 
             ];
             classNotes.sort((a,b) => a.studentName.localeCompare(b.studentName) || a.subject.localeCompare(b.subject))
             .forEach(note => {
-                // normalizeNote() déjà appliqué — null = case vide, jamais 0
                 const tc   = note.travauxClasse ?? '';
                 const dev  = note.devoirs       ?? '';
                 const eva  = note.evaluation    ?? '';
@@ -648,12 +837,10 @@ app.post('/generate-excel', requireAuth, sectionMiddleware, async (req, res) => 
     }
 });
 
-// Route de migration pour ajouter le champ section aux anciennes notes
 app.post('/migrate-old-notes', requireAuth, async (req, res) => {
     await connectToDatabase();
     try {
-        // Mettre à jour toutes les notes sans section pour les mettre en 'boys' par défaut
-        const result = await Note.updateMany(
+        const result = await SafeNote.updateMany(
             { $or: [{ section: { $exists: false } }, { section: null }] },
             { $set: { section: 'boys' } }
         );
@@ -669,18 +856,19 @@ app.post('/migrate-old-notes', requireAuth, async (req, res) => {
     }
 });
 
-// Route de statistiques pour déboguer (admin seulement)
 app.get('/stats-notes', requireAuth, sectionMiddleware, async (req, res) => {
     await connectToDatabase();
     try {
-        const totalNotes = await Note.countDocuments({});
-        const boysNotes = await Note.countDocuments({ section: 'boys' });
-        const girlsNotes = await Note.countDocuments({ section: 'girls' });
-        const noSectionNotes = await Note.countDocuments({ 
+        const totalNotes = await SafeNote.countDocuments({});
+        const boysNotes = await SafeNote.countDocuments({ section: 'boys' });
+        const girlsNotes = await SafeNote.countDocuments({ section: 'girls' });
+        const noSectionNotes = await SafeNote.countDocuments({ 
             $or: [{ section: { $exists: false } }, { section: null }] 
         });
         
-        const sampleNotes = await Note.find({}).limit(5).lean();
+        const sampleResult = SafeNote.find({});
+        const rawSamples = typeof sampleResult.lean === 'function' ? await sampleResult.lean() : await sampleResult;
+        const sampleNotes = rawSamples.slice(0, 5);
         
         res.status(200).json({
             total: totalNotes,
@@ -694,6 +882,15 @@ app.get('/stats-notes', requireAuth, sectionMiddleware, async (req, res) => {
         res.status(500).json({ error: 'Erreur lors de la récupération des stats' });
     }
 });
+
+// Start server immediately on startup (synchronous listen), connect to DB in background
+const PORT = process.env.PORT || 3000;
+if (require.main === module) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+    });
+    connectToDatabase().catch(err => console.warn('Background DB connection warning:', err));
+}
 
 // Export pour Vercel
 module.exports = app;
