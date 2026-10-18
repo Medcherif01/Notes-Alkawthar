@@ -1417,6 +1417,39 @@ function initAdminPanel() {
         adminBtn.addEventListener('click', openAdminModal);
         actionButtons.prepend(adminBtn);
     }
+
+    if (actionButtons && !document.getElementById('generateHtmlButton')) {
+        const generateHtmlButton = document.createElement('button');
+        generateHtmlButton.id = 'generateHtmlButton';
+        generateHtmlButton.className = 'action-btn';
+        generateHtmlButton.style.background = 'linear-gradient(135deg, #10B981, #059669)';
+        generateHtmlButton.style.color = 'white';
+        generateHtmlButton.innerHTML = '<i class="fas fa-file-pdf"></i><span>Rapport PDF</span>';
+        generateHtmlButton.addEventListener('click', async () => {
+            if (!currentSemester) {
+                alert('Veuillez sélectionner un semestre d\'abord.');
+                return;
+            }
+            try {
+                const res = await fetch('/generate-html-report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ semester: currentSemester })
+                });
+                if (res.ok) {
+                    const htmlText = await res.text();
+                    const win = window.open('', '_blank');
+                    win.document.write(htmlText);
+                    win.document.close();
+                } else {
+                    alert('Erreur lors de la génération du rapport.');
+                }
+            } catch (e) {
+                alert('Erreur réseau.');
+            }
+        });
+        actionButtons.appendChild(generateHtmlButton);
+    }
 }
 
 function openAdminModal() {
@@ -1448,12 +1481,98 @@ function populateAdminModalData() {
         container.innerHTML = '';
         Object.entries(studentsByClassGlobal).sort().forEach(([cls, students]) => {
             const div = document.createElement('div');
-            div.style.marginBottom = '0.8rem';
-            div.innerHTML = `<strong style="color:var(--primary);">${cls}</strong>: ${students.length > 0 ? students.join(', ') : 'Aucun élève'}`;
+            div.style.marginBottom = '1rem';
+            div.style.padding = '0.6rem';
+            div.style.background = 'var(--surface)';
+            div.style.borderRadius = 'var(--radius-sm)';
+            div.style.border = '1px solid var(--border)';
+            
+            let studentsHtml = students.length > 0 ? students.map(s => `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.4rem; padding-left: 0.5rem; font-size: 0.85rem;">
+                    <span>• ${s}</span>
+                    <div style="display: flex; gap: 0.4rem;">
+                        <button type="button" onclick="editStudent('${cls}', '${s}')" style="background:var(--primary); color:white; border:none; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-edit"></i></button>
+                        <button type="button" onclick="deleteStudent('${cls}', '${s}')" style="background:var(--danger); color:white; border:none; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            `).join('') : '<div style="font-size: 0.85rem; color: var(--text-muted); padding-left: 0.5rem; margin-top:0.4rem;">Aucun élève</div>';
+
+            div.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                    <strong style="color:var(--primary); font-size:0.95rem;">${cls}</strong>
+                    <button type="button" onclick="deleteClass('${cls}')" style="background:var(--danger); color:white; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:0.75rem;"><i class="fas fa-trash"></i> Supprimer la classe</button>
+                </div>
+                ${studentsHtml}
+            `;
             container.appendChild(div);
         });
     }
 }
+
+async function editStudent(className, oldName) {
+    const newName = prompt(`Modifier le nom de l'élève "${oldName}" dans la classe ${className} :`, oldName);
+    if (!newName || newName.trim() === oldName) return;
+
+    try {
+        const res = await fetch('/admin/update-student', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ className, oldName, newName: newName.trim() })
+        });
+        const result = await res.json();
+        if (result.success) {
+            window.location.reload();
+        } else {
+            alert(result.message);
+        }
+    } catch (e) {
+        alert('Erreur réseau.');
+    }
+}
+
+async function deleteStudent(className, studentName) {
+    if (!confirm(`Voulez-vous vraiment supprimer l'élève "${studentName}" de la classe ${className} ?`)) return;
+
+    try {
+        const res = await fetch('/admin/delete-student', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ className, studentName })
+        });
+        const result = await res.json();
+        if (result.success) {
+            window.location.reload();
+        } else {
+            alert(result.message);
+        }
+    } catch (e) {
+        alert('Erreur réseau.');
+    }
+}
+
+async function deleteClass(className) {
+    if (!confirm(`Voulez-vous vraiment supprimer toute la classe "${className}" et ses élèves ?`)) return;
+
+    try {
+        const res = await fetch('/admin/delete-class', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ className })
+        });
+        const result = await res.json();
+        if (result.success) {
+            window.location.reload();
+        } else {
+            alert(result.message);
+        }
+    } catch (e) {
+        alert('Erreur réseau.');
+    }
+}
+
+window.editStudent = editStudent;
+window.deleteStudent = deleteStudent;
+window.deleteClass = deleteClass;
 
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initAdminPanel, 500);

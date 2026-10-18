@@ -890,6 +890,170 @@ app.post('/admin/add-teacher', requireAuth, sectionMiddleware, (req, res) => {
     res.json({ success: true, message: `Enseignant ${teacherName} mis à jour avec succès.` });
 });
 
+app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { className, oldName, newName } = req.body;
+    if (!className || !oldName || !newName) return res.status(400).json({ success: false, message: 'Informations incomplètes.' });
+    
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    if (studentsMap[className]) {
+        const idx = studentsMap[className].indexOf(oldName);
+        if (idx !== -1) {
+            studentsMap[className][idx] = newName;
+        }
+    }
+    res.json({ success: true, message: `Élève mis à jour avec succès.` });
+});
+
+app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const permissions = req.sectionData.teacherPermissions[teacher];
+    if (permissions !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { className } = req.body;
+    const section = req.session.section || 'boys';
+    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    delete studentsMap[className];
+    res.json({ success: true, message: `Classe ${className} supprimée.` });
+});
+
+app.post('/generate-html-report', requireAuth, sectionMiddleware, async (req, res) => {
+    const { semester } = req.body;
+    const username = req.session.user;
+    const section = req.session.section || 'boys';
+    const query = buildMongoQueryForUser(username, semester, req.sectionData.teacherPermissions);
+    if (section === 'boys') {
+        query.$or = [{ section: 'boys' }, { section: { $exists: false } }, { section: null }];
+    } else {
+        query.section = 'girls';
+    }
+    const noteResult = SafeNote.find(query);
+    const rawNotes = typeof noteResult.lean === 'function' ? await noteResult.lean() : await noteResult;
+    const notes = rawNotes.map(normalizeNote);
+
+    const allowedOptions = getUserAllowedOptions(username, req.sectionData);
+    const sectionTitle = section === 'girls' ? 'Section Filles' : 'Section Garçons';
+
+    let html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport de Notes - Al Kawthar - ${semester}</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #1F2937; line-height: 1.5; margin: 0; padding: 0; background: #FFF; }
+        .report-container { max-width: 210mm; margin: 0 auto; padding: 10mm; background: #FFF; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #1E3A5F; padding-bottom: 15px; margin-bottom: 25px; }
+        .school-info h1 { font-size: 1.4rem; color: #1E3A5F; margin: 0 0 5px 0; text-transform: uppercase; }
+        .school-info p { margin: 0; color: #4B5563; font-size: 0.9rem; }
+        .meta-box { background: #F3F4F6; padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; font-size: 0.95rem; font-weight: 600; }
+        h2 { color: #1E3A5F; font-size: 1.15rem; border-bottom: 2px solid #E5E7EB; padding-bottom: 6px; margin-top: 30px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 0.85rem; }
+        th, td { border: 1px solid #D1D5DB; padding: 6px 10px; text-align: center; }
+        th { background: #1E3A5F; color: #FFF; font-weight: 600; }
+        tr:nth-child(even) { background: #F9FAFB; }
+        .signatures { display: flex; justify-content: space-between; margin-top: 40px; page-break-inside: avoid; }
+        .sig-box { width: 40%; text-align: center; border-top: 1px solid #9CA3AF; padding-top: 10px; font-weight: 600; color: #374151; font-size: 0.9rem; }
+        @media print {
+            body { -webkit-print-color-adjust: exact; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <div class="no-print" style="text-align: right; margin-bottom: 15px;">
+            <button onclick="window.print()" style="background: #1E3A5F; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                🖨️ Imprimer / Enregistrer en PDF A4
+            </button>
+        </div>
+        <header>
+            <div class="school-info">
+                <h1>Al Kawthar International School</h1>
+                <p>Système Officiel de Gestion des Notes — ${sectionTitle}</p>
+            </div>
+            <div style="text-align: right; font-size: 0.85rem; color: #6B7280;">
+                <p><strong>Généré par:</strong> ${username}</p>
+                <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
+            </div>
+        </header>
+
+        <div class="meta-box">
+            <span>Période : Semestre ${semester}</span>
+            <span>Section : ${sectionTitle}</span>
+        </div>`;
+
+    allowedOptions.classes.forEach(className => {
+        const classNotes = notes.filter(n => n.class === className);
+        if (classNotes.length === 0) return;
+
+        html += `<h2>Classe : ${className}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Élève</th>
+                    <th>Matière</th>
+                    <th>Travaux Classe</th>
+                    <th>Devoirs</th>
+                    <th>Évaluation</th>
+                    <th>Examen</th>
+                    <th>Total</th>
+                    <th>Enseignant</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+        classNotes.sort((a, b) => a.studentName.localeCompare(b.studentName) || a.subject.localeCompare(b.subject)).forEach(note => {
+            const tc = note.travauxClasse ?? '-';
+            const dev = note.devoirs ?? '-';
+            const eva = note.evaluation ?? '-';
+            const exam = note.examen ?? '-';
+            const hasAny = (note.travauxClasse !== null && note.travauxClasse !== '') || 
+                           (note.devoirs !== null && note.devoirs !== '') || 
+                           (note.evaluation !== null && note.evaluation !== '') || 
+                           (note.examen !== null && note.examen !== '');
+            let total = '-';
+            if (hasAny) {
+                const t = (note.travauxClasse ? parseFloat(note.travauxClasse) : 0) +
+                          (note.devoirs ? parseFloat(note.devoirs) : 0) +
+                          (note.evaluation ? parseFloat(note.evaluation) : 0) +
+                          (note.examen ? parseFloat(note.examen) : 0);
+                total = parseFloat(t.toFixed(4));
+            }
+
+            html += `<tr>
+                <td style="text-align: left; font-weight: 600;">${note.studentName}</td>
+                <td>${note.subject}</td>
+                <td>${tc}</td>
+                <td>${dev}</td>
+                <td>${eva}</td>
+                <td>${exam}</td>
+                <td style="font-weight: bold; background: #EEF2FF;">${total}</td>
+                <td style="font-size: 0.85rem; color: #4B5563;">${note.teacher || '-'}</td>
+            </tr>`;
+        });
+
+        html += `</tbody></table>`;
+    });
+
+    html += `<div class="signatures">
+            <div class="sig-box">Signature de l'Enseignant / Responsable</div>
+            <div class="sig-box">Signature de la Direction</div>
+        </div>
+    </div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+});
+
 // Start server immediately on synchronous listen
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
