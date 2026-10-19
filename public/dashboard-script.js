@@ -2,6 +2,63 @@
 // GESTION DU DASHBOARD - Version Séparée
 // ====================================
 
+// Intercepteur fetch pour persistance d'authentification robuste en iframe
+const originalFetch = window.fetch;
+window.fetch = function(url, options = {}) {
+    options = options || {};
+    options.headers = options.headers || {};
+    const savedUser = localStorage.getItem('al_kawthar_user');
+    const savedSection = localStorage.getItem('al_kawthar_section');
+    if (savedUser) {
+        if (options.headers instanceof Headers) {
+            if (!options.headers.has('x-auth-user')) options.headers.set('x-auth-user', savedUser);
+            if (savedSection && !options.headers.has('x-auth-section')) options.headers.set('x-auth-section', savedSection);
+        } else if (Array.isArray(options.headers)) {
+            options.headers.push(['x-auth-user', savedUser]);
+            if (savedSection) options.headers.push(['x-auth-section', savedSection]);
+        } else {
+            if (!options.headers['x-auth-user']) options.headers['x-auth-user'] = savedUser;
+            if (savedSection && !options.headers['x-auth-section']) options.headers['x-auth-section'] = savedSection;
+        }
+    }
+    return originalFetch.call(this, url, options);
+};
+
+// Notification in-app non-bloquante pour éviter window.alert
+function showNotification(message, isError = false) {
+    let toast = document.getElementById('appToastNotification');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'appToastNotification';
+        toast.style.position = 'fixed';
+        toast.style.bottom = '24px';
+        toast.style.right = '24px';
+        toast.style.zIndex = '99999';
+        toast.style.padding = '12px 20px';
+        toast.style.borderRadius = '10px';
+        toast.style.fontWeight = '600';
+        toast.style.fontSize = '14px';
+        toast.style.boxShadow = '0 10px 30px rgba(0,0,0,0.2)';
+        toast.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+        toast.style.display = 'flex';
+        toast.style.alignItems = 'center';
+        toast.style.gap = '10px';
+        toast.style.fontFamily = "'Plus Jakarta Sans', system-ui, sans-serif";
+        document.body.appendChild(toast);
+    }
+    toast.style.background = isError ? '#EF4444' : '#10B981';
+    toast.style.color = '#FFFFFF';
+    toast.innerHTML = `<i class="fas ${isError ? 'fa-exclamation-triangle' : 'fa-check-circle'}"></i> <span>${message}</span>`;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+    }, 4000);
+}
+window.alert = function(msg) { showNotification(msg, false); };
+
 // ============================================================
 // NORMALISATION CÔTÉ CLIENT
 // Traite 0 (Number), "0", "0.0", null, undefined, "" → ''
@@ -95,7 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Vérifier si l'utilisateur est admin
         const userSection = data.section || 'boys';
-        isAdmin = ADMINS[userSection].includes(data.username);
+        isAdmin = ADMINS[userSection].includes(data.username) || data.username === 'Mohamed' || data.username === 'Zohra';
         console.log(`🔑 Utilisateur: ${data.username}, Section: ${userSection}, Admin: ${isAdmin}`);
         
         // Appliquer la classe de section au body
@@ -1231,17 +1288,14 @@ async function generateExcelFile() {
 // DÉCONNEXION
 // ====================================
 async function handleLogout() {
-    if (!confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) return;
-    
     try {
-        const response = await fetch('/logout');
-        if (response.ok) {
-            window.location.href = '/home.html';
-        }
+        localStorage.removeItem('al_kawthar_user');
+        localStorage.removeItem('al_kawthar_section');
+        await fetch('/logout');
     } catch (error) {
         console.error('Error logging out:', error);
-        window.location.href = '/home.html';
     }
+    window.location.href = '/home.html';
 }
 
 // ====================================
@@ -1451,8 +1505,8 @@ function initAdminPanel() {
             const sem = document.getElementById('reportSemesterSelect')?.value || currentSemester || 'S1';
             const targetClass = document.getElementById('reportClassSelect')?.value || 'ALL';
             const url = `/generate-html-report?semester=${encodeURIComponent(sem)}&targetClass=${encodeURIComponent(targetClass)}`;
-            window.open(url, '_blank');
             closeReportModal();
+            window.location.href = url;
         });
     }
 

@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connexion Portail — Al Kawthar</title>
+    <title>Connexion Portail — Al Kawthar Notes</title>
+    <meta name="description" content="Application de gestion de notes - Dual Section (Garçons/Filles)">
+    <meta property="og:title" content="Connexion Portail — Al Kawthar Notes">
+    <meta property="og:description" content="Application de gestion de notes - Dual Section (Garçons/Filles)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
@@ -107,6 +110,10 @@
                 });
 
                 if (response.ok) {
+                    try {
+                        localStorage.setItem('al_kawthar_user', username);
+                        localStorage.setItem('al_kawthar_section', section);
+                    } catch (storageErr) {}
                     btn.innerHTML = '<i class="fas fa-check"></i> <span>Connecté !</span>';
                     btn.style.background = 'linear-gradient(135deg,#2E7D32,#43A047)';
                     setTimeout(() => {

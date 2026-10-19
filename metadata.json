@@ -2,5 +2,7 @@
   "name": "Al Kawthar Notes",
   "description": "Application de gestion de notes - Dual Section (Garçons/Filles)",
   "requestor": "user",
-  "capabilities": []
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

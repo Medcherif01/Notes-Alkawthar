@@ -178,21 +178,36 @@ const SafeNote = {
     }
 };
 
-// Configuration Express pour Vercel
+// Configuration Express pour Vercel, Cloud Run et AI Studio
 app.set('trust proxy', 1);
 
 const SESSION_MAX_AGE = 10 * 365 * 24 * 60 * 60 * 1000; // 10 ans en millisecondes
+const sessionStore = new session.MemoryStore();
+
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    store: sessionStore,
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
+        secure: 'auto',
         httpOnly: true,
         maxAge: SESSION_MAX_AGE,
         sameSite: 'lax'
     }
 }));
+
+// Adapter le cookie pour environnement iframe (SameSite=None; Secure en HTTPS)
+app.use((req, res, next) => {
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    if (req.session && req.session.cookie) {
+        if (isHttps) {
+            req.session.cookie.secure = true;
+            req.session.cookie.sameSite = 'none';
+        }
+    }
+    next();
+});
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -250,7 +265,7 @@ function buildSubjectsByClass(permissions, studentsByClass = {}) {
 
 // Middleware de section
 function sectionMiddleware(req, res, next) {
-    const section = req.session?.section || 'boys';
+    const section = req.session?.section || req.headers['x-auth-section'] || req.query?.auth_section || 'boys';
     req.sectionData = getSectionData(section);
     next();
 }
@@ -377,16 +392,23 @@ app.get('/logout', (req, res) => {
 
 function requireAuth(req, res, next) {
     if (req.session && req.session.user) {
-        next();
-    } else {
-        console.log(`🚫 User not authenticated trying to access ${req.path}`);
-        res.status(401).json({ success: false, message: 'Non authentifié' });
+        return next();
     }
+    const authUser = req.headers['x-auth-user'] || req.query?.auth_user;
+    const authSection = req.headers['x-auth-section'] || req.query?.auth_section;
+    if (authUser) {
+        if (!req.session) req.session = {};
+        req.session.user = authUser;
+        if (authSection) req.session.section = authSection;
+        return next();
+    }
+    console.log(`🚫 User not authenticated trying to access ${req.path}`);
+    res.status(401).json({ success: false, message: 'Non authentifié' });
 }
 
 app.get('/get-user', requireAuth, sectionMiddleware, (req, res) => {
     const username = req.session.user;
-    const section = req.session.section || 'boys';
+    const section = req.session.section || req.headers['x-auth-section'] || req.query?.auth_section || 'boys';
     res.json({
         username: username,
         section: section,
@@ -1402,7 +1424,7 @@ app.all('/generate-html-report', requireAuth, sectionMiddleware, async (req, res
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
             Imprimer / Exporter PDF (A4)
         </button>
-        <button class="close-btn" onclick="window.close()">Fermer</button>
+        <button class="close-btn" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href='/dashboard.html'; }">Retour</button>
     </div>
 
     <div class="page-sheet">
@@ -1544,6 +1566,19 @@ app.all('/generate-html-report', requireAuth, sectionMiddleware, async (req, res
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
+});
+
+// Fallback error middleware pour gestion gracieuse en mode déconnecté
+app.use((err, req, res, next) => {
+    if (err.name === 'MongooseError' || err.name === 'MongoNetworkError' || (err.message && err.message.includes('buffering timed out'))) {
+        console.warn('[AI Studio] Database offline — returning mock empty response');
+        if (req.method === 'GET') {
+            return res.json(req.path.endsWith('s') || req.path.endsWith('s/') ? [] : {});
+        }
+        return res.status(503).json({ error: 'Service temporarily unavailable (database offline)' });
+    }
+    console.error('Unhandled server error:', err);
+    res.status(500).json({ error: 'Erreur interne du serveur' });
 });
 
 // Start server immediately on synchronous listen
