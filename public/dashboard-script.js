@@ -2413,6 +2413,20 @@ function openDeleteTeacherModal(teacherName) {
     });
 }
 
+function appendClassToTeacher(className) {
+    const input = document.getElementById('teacherClasses');
+    if (!input) return;
+    if (className === 'ALL') {
+        input.value = 'PEI1, PEI2, PEI3, PEI4, PEI5, DP';
+        return;
+    }
+    let current = input.value.split(',').map(c => c.trim()).filter(Boolean);
+    if (!current.includes(className)) {
+        current.push(className);
+        input.value = current.join(', ');
+    }
+}
+
 // Exposer globalement pour inline onclick
 window.openAdminModal = openAdminModal;
 window.closeAdminModal = closeAdminModal;
@@ -2425,6 +2439,7 @@ window.quickEnrollStudent = quickEnrollStudent;
 window.populateTeacherForEdit = populateTeacherForEdit;
 window.openDeleteTeacherModal = openDeleteTeacherModal;
 window.resetTeacherForm = resetTeacherForm;
+window.appendClassToTeacher = appendClassToTeacher;
 
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
