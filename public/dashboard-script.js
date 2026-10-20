@@ -167,8 +167,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Vérifier si l'utilisateur est admin
         const userSection = data.section || 'boys';
-        isAdmin = ADMINS[userSection].includes(data.username) || data.username === 'Mohamed' || data.username === 'Zohra';
+        const uname = (data.username || '').trim().toLowerCase();
+        isAdmin = ADMINS[userSection].map(u => u.toLowerCase()).includes(uname) || uname === 'mohamed' || uname === 'zohra' || data.permissions === 'admin';
         console.log(`🔑 Utilisateur: ${data.username}, Section: ${userSection}, Admin: ${isAdmin}`);
+
+        const openAdminBtn = document.getElementById('openAdminModalBtn');
+        if (openAdminBtn) {
+            if (isAdmin || uname === 'mohamed' || uname === 'zohra') {
+                openAdminBtn.style.display = 'inline-flex';
+                openAdminBtn.addEventListener('click', openAdminModal);
+            } else {
+                openAdminBtn.style.display = 'none';
+            }
+        }
         
         // Appliquer la classe de section au body
         if (data.section === 'girls') {
@@ -1526,13 +1537,20 @@ function initAdminPanel() {
     }
 
     // Gestion du panneau Admin (réservé aux admins)
-    if (!isAdmin) return;
-
     const openAdminBtn = document.getElementById('openAdminModalBtn');
+    const uname = (currentUserData?.username || '').trim().toLowerCase();
+    const effectiveIsAdmin = isAdmin || uname === 'mohamed' || uname === 'zohra';
     if (openAdminBtn) {
-        openAdminBtn.style.display = 'inline-flex';
-        openAdminBtn.addEventListener('click', openAdminModal);
+        if (effectiveIsAdmin) {
+            openAdminBtn.style.display = 'inline-flex';
+            openAdminBtn.removeEventListener('click', openAdminModal);
+            openAdminBtn.addEventListener('click', openAdminModal);
+        } else {
+            openAdminBtn.style.display = 'none';
+        }
     }
+
+    if (!effectiveIsAdmin) return;
 }
 
 // ====================================
