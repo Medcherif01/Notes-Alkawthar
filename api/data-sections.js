@@ -141,13 +141,13 @@ function generateAllowedTeachers(permissions, admins) {
 // Configuration des administrateurs (User: Password)
 // Section Garçons: Mohamed uniquement
 const adminsBoys = { 
-    "Mohamed": "Mohamed120786" 
+    "Mohamed": "Med120786" 
 };
 
 // Section Filles: Zohra Zidane + Mohamed
 const adminsGirls = { 
     "Zohra": "Zohra",        // Admin: Zohra Zidane (login: Zohra, mdp: Zohra)
-    "Mohamed": "Mohamed120786"     // Admin: Mohamed (login: Mohamed, mdp: Mohamed120786)
+    "Mohamed": "Med120786"     // Admin: Mohamed (login: Mohamed, mdp: Med120786)
 };
 
 // Génération des listes d'accès

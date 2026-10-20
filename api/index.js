@@ -13,6 +13,14 @@ require('dotenv').config();
 const fs = require('fs');
 const STORAGE_FILE = path.join(__dirname, '..', 'db_storage.json');
 const dataSections = require(path.join(__dirname, 'data-sections'));
+const {
+    allowedTeachersBoys,
+    teacherPermissionsBoys,
+    studentsByClassBoys,
+    allowedTeachersGirls,
+    teacherPermissionsGirls,
+    studentsByClassGirls
+} = dataSections;
 
 let dbStorage = {
     boys: {
@@ -55,10 +63,10 @@ try {
 
 // Force Mohamed admin password and permissions
 if (dbStorage.boys && dbStorage.boys.allowedTeachers) {
-    dbStorage.boys.allowedTeachers["Mohamed"] = "Mohamed120786";
+    dbStorage.boys.allowedTeachers["Mohamed"] = "Med120786";
 }
 if (dbStorage.girls && dbStorage.girls.allowedTeachers) {
-    dbStorage.girls.allowedTeachers["Mohamed"] = "Mohamed120786";
+    dbStorage.girls.allowedTeachers["Mohamed"] = "Med120786";
 }
 if (dbStorage.boys && dbStorage.boys.teacherPermissions) {
     dbStorage.boys.teacherPermissions["Mohamed"] = "admin";
@@ -273,18 +281,24 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Fonctions de gestion des sections
 function getSectionData(section = 'boys') {
-    let allowedTeachers, teacherPermissions, studentsByClass;
+    const sec = section === 'girls' ? 'girls' : 'boys';
+    const storeSec = dbStorage[sec] || {};
     
-    if (section === 'girls') {
-        allowedTeachers = {...allowedTeachersGirls};
-        teacherPermissions = JSON.parse(JSON.stringify(teacherPermissionsGirls));
-        studentsByClass = JSON.parse(JSON.stringify(studentsByClassGirls));
-    } else {
-        allowedTeachers = {...allowedTeachersBoys};
-        teacherPermissions = JSON.parse(JSON.stringify(teacherPermissionsBoys));
-        studentsByClass = JSON.parse(JSON.stringify(studentsByClassBoys));
-    }
-    
+    const fallbackAllowed = sec === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
+    const fallbackPerms = sec === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    const fallbackStudents = sec === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+
+    const allowedTeachers = {
+        ...(fallbackAllowed || {}),
+        ...(storeSec.allowedTeachers || {})
+    };
+    const teacherPermissions = JSON.parse(JSON.stringify(storeSec.teacherPermissions || fallbackPerms || {}));
+    const studentsByClass = JSON.parse(JSON.stringify(storeSec.studentsByClass || fallbackStudents || {}));
+
+    // Toujours garantir le mot de passe admin Mohamed
+    allowedTeachers["Mohamed"] = "Med120786";
+    teacherPermissions["Mohamed"] = "admin";
+
     const subjectsByClass = buildSubjectsByClass(teacherPermissions, studentsByClass);
     const allClasses = [...new Set([...Object.keys(studentsByClass), ...Object.keys(subjectsByClass)])].sort();
     const allSubjects = [...new Set(Object.values(subjectsByClass).flat())].sort();
@@ -423,15 +437,19 @@ app.get('/dashboard.html', (req, res) => {
 app.post('/login', (req, res) => {
     try {
         const { username, password, section } = req.body;
-        const userSection = section || 'boys';
+        const userSection = section === 'girls' ? 'girls' : 'boys';
         const sectionData = getSectionData(userSection);
         
         const cleanUsername = (username || '').trim();
+        const cleanPassword = (password || '').trim();
         const allowed = sectionData.allowedTeachers || {};
         const foundUserKey = Object.keys(allowed).find(k => k.toLowerCase() === cleanUsername.toLowerCase());
         const matchedUser = foundUserKey || cleanUsername;
         
-        if (allowed[matchedUser] && allowed[matchedUser] === password) {
+        const expectedPass = allowed[matchedUser];
+        const isMatch = Boolean(expectedPass && (expectedPass === password || expectedPass === cleanPassword));
+        
+        if (isMatch) {
             if (!req.session) req.session = {};
             req.session.user = matchedUser;
             req.session.section = userSection;
@@ -453,7 +471,7 @@ app.post('/login', (req, res) => {
                 sendSuccess();
             }
         } else {
-            console.log(`❌ Login failed for user: ${cleanUsername}`);
+            console.log(`❌ Login failed for user: "${cleanUsername}" in section: ${userSection}`);
             res.status(401).json({ success: false, message: 'Login ou mot de passe incorrect' });
         }
     } catch (err) {
@@ -913,6 +931,31 @@ app.get('/stats-notes', requireAuth, sectionMiddleware, async (req, res) => {
 });
 
 // Admin management endpoints for classes, students, and teachers
+function getAdminSectionMaps(section) {
+    const sec = section === 'girls' ? 'girls' : 'boys';
+    if (!dbStorage[sec]) dbStorage[sec] = {};
+    if (!dbStorage[sec].studentsByClass) {
+        dbStorage[sec].studentsByClass = JSON.parse(JSON.stringify(sec === 'girls' ? studentsByClassGirls : studentsByClassBoys));
+    }
+    if (!dbStorage[sec].teacherPermissions) {
+        dbStorage[sec].teacherPermissions = JSON.parse(JSON.stringify(sec === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys));
+    }
+    if (!dbStorage[sec].allowedTeachers) {
+        dbStorage[sec].allowedTeachers = JSON.parse(JSON.stringify(sec === 'girls' ? allowedTeachersGirls : allowedTeachersBoys));
+    }
+
+    // Always guarantee Mohamed admin credentials
+    dbStorage[sec].allowedTeachers["Mohamed"] = "Med120786";
+    dbStorage[sec].teacherPermissions["Mohamed"] = "admin";
+
+    return {
+        sec,
+        studentsMap: dbStorage[sec].studentsByClass,
+        permMap: dbStorage[sec].teacherPermissions,
+        allowedMap: dbStorage[sec].allowedTeachers
+    };
+}
+
 app.post('/admin/add-class', requireAuth, sectionMiddleware, (req, res) => {
     const teacher = req.session.user;
     const permissions = req.sectionData.teacherPermissions[teacher];
@@ -923,11 +966,11 @@ app.post('/admin/add-class', requireAuth, sectionMiddleware, (req, res) => {
     if (!className || !className.trim()) return res.status(400).json({ success: false, message: 'Nom de classe requis.' });
     const trimmed = className.trim();
     
-    const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    const { studentsMap } = getAdminSectionMaps(req.session.section);
     if (!studentsMap[trimmed]) {
         studentsMap[trimmed] = [];
     }
+    saveDatabaseToDisk();
     res.json({ success: true, message: `Classe "${trimmed}" ajoutée avec succès.` });
 });
 
@@ -942,10 +985,8 @@ app.post('/admin/update-class', requireAuth, sectionMiddleware, (req, res) => {
         return res.status(400).json({ success: false, message: 'Ancien et nouveau noms requis.' });
     }
     const trimmedNew = newClassName.trim();
-    
     const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
-    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    const { studentsMap, permMap } = getAdminSectionMaps(section);
     
     if (studentsMap[oldClassName]) {
         studentsMap[trimmedNew] = studentsMap[oldClassName];
@@ -971,6 +1012,7 @@ app.post('/admin/update-class', requireAuth, sectionMiddleware, (req, res) => {
             n.class = trimmedNew;
         }
     });
+    saveDatabaseToDisk();
 
     res.json({ success: true, message: `Classe renommée en "${trimmedNew}".` });
 });
@@ -985,8 +1027,7 @@ app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
     if (!className) return res.status(400).json({ success: false, message: 'Nom de classe requis.' });
     
     const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
-    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
+    const { studentsMap, permMap } = getAdminSectionMaps(section);
     
     delete studentsMap[className];
 
@@ -1000,6 +1041,7 @@ app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
             });
         }
     });
+    saveDatabaseToDisk();
 
     res.json({ success: true, message: `Classe "${className}" et ses élèves ont été supprimés.` });
 });
@@ -1015,9 +1057,7 @@ app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
         return res.status(400).json({ success: false, message: 'Classe et nom d\'élève requis.' });
     }
     const trimmed = studentName.trim();
-    
-    const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    const { studentsMap } = getAdminSectionMaps(req.session.section);
     if (!studentsMap[className]) {
         studentsMap[className] = [];
     }
@@ -1025,6 +1065,7 @@ app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
         studentsMap[className].push(trimmed);
         studentsMap[className].sort();
     }
+    saveDatabaseToDisk();
     res.json({ success: true, message: `Élève "${trimmed}" ajouté à la classe ${className}.` });
 });
 
@@ -1042,7 +1083,7 @@ app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => 
     const destClass = (targetClass && targetClass.trim()) ? targetClass.trim() : className;
     
     const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    const { studentsMap } = getAdminSectionMaps(section);
     
     if (destClass === className) {
         if (studentsMap[className]) {
@@ -1072,6 +1113,7 @@ app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => 
             }
         }
     });
+    saveDatabaseToDisk();
 
     res.json({ success: true, message: `Élève mis à jour avec succès.` });
 });
@@ -1084,10 +1126,11 @@ app.post('/admin/delete-student', requireAuth, sectionMiddleware, (req, res) => 
     }
     const { className, studentName } = req.body;
     const section = req.session.section || 'boys';
-    const studentsMap = section === 'girls' ? studentsByClassGirls : studentsByClassBoys;
+    const { studentsMap } = getAdminSectionMaps(section);
     if (studentsMap[className]) {
         studentsMap[className] = studentsMap[className].filter(s => s !== studentName);
     }
+    saveDatabaseToDisk();
     res.json({ success: true, message: `Élève "${studentName}" supprimé de ${className}.` });
 });
 
@@ -1102,8 +1145,7 @@ const handleSaveTeacher = (req, res) => {
         return res.status(400).json({ success: false, message: 'Nom, matière et classes requis.' });
     }
     const section = req.session.section || 'boys';
-    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
-    const allowedMap = section === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
+    const { permMap, allowedMap } = getAdminSectionMaps(section);
     
     const trimmedName = teacherName.trim();
     const classList = Array.isArray(classes) ? classes : classes.split(',').map(c => c.trim()).filter(Boolean);
@@ -1125,6 +1167,7 @@ const handleSaveTeacher = (req, res) => {
     } else {
         permMap[trimmedName].push({ subject: subject.trim(), classes: classList });
     }
+    saveDatabaseToDisk();
     
     res.json({ success: true, message: `Enseignant "${trimmedName}" enregistré avec succès.` });
 };
@@ -1142,15 +1185,15 @@ app.post('/admin/delete-teacher', requireAuth, sectionMiddleware, (req, res) => 
     if (!teacherName) return res.status(400).json({ success: false, message: 'Nom d\'enseignant requis.' });
 
     const section = req.session.section || 'boys';
-    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
-    const allowedMap = section === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
+    const { permMap, allowedMap } = getAdminSectionMaps(section);
 
-    if (permMap[teacherName] === 'admin') {
+    if (permMap[teacherName] === 'admin' || teacherName === 'Mohamed') {
         return res.status(400).json({ success: false, message: 'Impossible de supprimer un compte administrateur racine.' });
     }
 
     delete permMap[teacherName];
     delete allowedMap[teacherName];
+    saveDatabaseToDisk();
 
     res.json({ success: true, message: `Enseignant "${teacherName}" supprimé avec succès.` });
 });
@@ -1162,8 +1205,7 @@ app.get('/admin/get-teachers', requireAuth, sectionMiddleware, (req, res) => {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const section = req.session.section || 'boys';
-    const permMap = section === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
-    const allowedMap = section === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
+    const { permMap, allowedMap } = getAdminSectionMaps(section);
     
     const list = Object.entries(permMap).map(([name, perms]) => ({
         name,
