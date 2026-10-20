@@ -421,26 +421,44 @@ app.get('/dashboard.html', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-    const { username, password, section } = req.body;
-    const userSection = section || 'boys';
-    const sectionData = getSectionData(userSection);
-    
-    const cleanUsername = (username || '').trim();
-    const foundUserKey = Object.keys(sectionData.allowedTeachers).find(k => k.toLowerCase() === cleanUsername.toLowerCase());
-    const matchedUser = foundUserKey || cleanUsername;
-    
-    if (sectionData.allowedTeachers[matchedUser] && sectionData.allowedTeachers[matchedUser] === password) {
-        req.session.user = matchedUser;
-        req.session.section = userSection;
-        req.session.cookie.maxAge = SESSION_MAX_AGE;
-        req.session.save(err => {
-            if (err) console.error("Session save error:", err);
-            console.log(`✅ Login successful for user: ${matchedUser} in section: ${userSection}`);
-            res.status(200).json({ success: true, message: 'Connexion réussie' });
-        });
-    } else {
-        console.log(`❌ Login failed for user: ${cleanUsername}`);
-        res.status(401).json({ success: false, message: 'Login ou mot de passe incorrect' });
+    try {
+        const { username, password, section } = req.body;
+        const userSection = section || 'boys';
+        const sectionData = getSectionData(userSection);
+        
+        const cleanUsername = (username || '').trim();
+        const allowed = sectionData.allowedTeachers || {};
+        const foundUserKey = Object.keys(allowed).find(k => k.toLowerCase() === cleanUsername.toLowerCase());
+        const matchedUser = foundUserKey || cleanUsername;
+        
+        if (allowed[matchedUser] && allowed[matchedUser] === password) {
+            if (!req.session) req.session = {};
+            req.session.user = matchedUser;
+            req.session.section = userSection;
+            if (req.session.cookie) {
+                req.session.cookie.maxAge = SESSION_MAX_AGE;
+            }
+            
+            const sendSuccess = () => {
+                console.log(`✅ Login successful for user: ${matchedUser} in section: ${userSection}`);
+                res.status(200).json({ success: true, message: 'Connexion réussie' });
+            };
+
+            if (req.session && typeof req.session.save === 'function') {
+                req.session.save(err => {
+                    if (err) console.error("Session save error:", err);
+                    sendSuccess();
+                });
+            } else {
+                sendSuccess();
+            }
+        } else {
+            console.log(`❌ Login failed for user: ${cleanUsername}`);
+            res.status(401).json({ success: false, message: 'Login ou mot de passe incorrect' });
+        }
+    } catch (err) {
+        console.error('❌ Login server error:', err);
+        res.status(500).json({ success: false, message: 'Erreur interne du serveur' });
     }
 });
 
