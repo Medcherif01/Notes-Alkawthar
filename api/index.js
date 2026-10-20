@@ -53,6 +53,21 @@ try {
     console.error('❌ Error loading db_storage.json, using defaults:', e);
 }
 
+// Force Mohamed admin password and permissions
+if (dbStorage.boys && dbStorage.boys.allowedTeachers) {
+    dbStorage.boys.allowedTeachers["Mohamed"] = "Mohamed120786";
+}
+if (dbStorage.girls && dbStorage.girls.allowedTeachers) {
+    dbStorage.girls.allowedTeachers["Mohamed"] = "Mohamed120786";
+}
+if (dbStorage.boys && dbStorage.boys.teacherPermissions) {
+    dbStorage.boys.teacherPermissions["Mohamed"] = "admin";
+}
+if (dbStorage.girls && dbStorage.girls.teacherPermissions) {
+    dbStorage.girls.teacherPermissions["Mohamed"] = "admin";
+}
+saveDatabaseToDisk();
+
 function saveDatabaseToDisk() {
     try {
         dbStorage.notes = inMemoryNotes;
