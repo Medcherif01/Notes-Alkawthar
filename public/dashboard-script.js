@@ -129,6 +129,21 @@ const ADMINS = {
     girls: ['Zohra', 'Mohamed']
 };
 
+async function refreshAppData() {
+    try {
+        const res = await fetch('/get-user');
+        if (res.ok) {
+            const data = await res.json();
+            currentUserPermissions = data.permissions;
+            subjectsByClassGlobal = data.subjectsByClass;
+            studentsByClassGlobal = data.studentsByClass;
+            populatePermissionBasedDropdowns();
+        }
+    } catch (e) {
+        console.error('Error refreshing app data:', e);
+    }
+}
+
 // ====================================
 // INITIALISATION AU CHARGEMENT
 // ====================================
@@ -1799,8 +1814,9 @@ function bindAdminControlsOnce() {
                     classNameInput.value = '';
                     panelAddClass.style.display = 'none';
                     if (!studentsByClassGlobal[className]) studentsByClassGlobal[className] = [];
+                    await refreshAppData();
                     populateAdminModalData();
-                    setTimeout(() => window.location.reload(), 700);
+                    await fetchAndDisplayData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -1838,8 +1854,9 @@ function bindAdminControlsOnce() {
                         studentsByClassGlobal[className].push(studentName);
                         studentsByClassGlobal[className].sort();
                     }
+                    await refreshAppData();
                     populateAdminModalData();
-                    setTimeout(() => window.location.reload(), 700);
+                    await fetchAndDisplayData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -1883,7 +1900,7 @@ function bindAdminControlsOnce() {
                     resetTeacherForm();
                     panelAddTeacher.style.display = 'none';
                     await loadTeachersList();
-                    setTimeout(() => window.location.reload(), 700);
+                    await refreshAppData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -2107,7 +2124,9 @@ function openRenameClassModal(oldClassName) {
                 const result = await res.json();
                 if (result.success) {
                     showAdminNotice(result.message);
-                    setTimeout(() => window.location.reload(), 600);
+                    await refreshAppData();
+                    populateAdminModalData();
+                    await fetchAndDisplayData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -2135,8 +2154,9 @@ function openDeleteClassModal(className) {
                 if (result.success) {
                     showAdminNotice(result.message);
                     delete studentsByClassGlobal[className];
+                    await refreshAppData();
                     populateAdminModalData();
-                    setTimeout(() => window.location.reload(), 600);
+                    await fetchAndDisplayData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -2168,8 +2188,9 @@ function openRenameStudentModal(className, oldName) {
                         const idx = studentsByClassGlobal[className].indexOf(oldName);
                         if (idx !== -1) studentsByClassGlobal[className][idx] = newName;
                     }
+                    await refreshAppData();
                     populateAdminModalData();
-                    setTimeout(() => window.location.reload(), 600);
+                    await fetchAndDisplayData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -2205,8 +2226,9 @@ function openTransferStudentModal(currentClass, studentName) {
                     if (!studentsByClassGlobal[targetClass]) studentsByClassGlobal[targetClass] = [];
                     studentsByClassGlobal[targetClass].push(studentName);
                     studentsByClassGlobal[targetClass].sort();
+                    await refreshAppData();
                     populateAdminModalData();
-                    setTimeout(() => window.location.reload(), 600);
+                    await fetchAndDisplayData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -2235,8 +2257,9 @@ function openDeleteStudentModal(className, studentName) {
                     if (studentsByClassGlobal[className]) {
                         studentsByClassGlobal[className] = studentsByClassGlobal[className].filter(s => s !== studentName);
                     }
+                    await refreshAppData();
                     populateAdminModalData();
-                    setTimeout(() => window.location.reload(), 600);
+                    await fetchAndDisplayData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
@@ -2456,7 +2479,7 @@ function openDeleteTeacherModal(teacherName) {
                 if (result.success) {
                     showAdminNotice(result.message);
                     await loadTeachersList();
-                    setTimeout(() => window.location.reload(), 600);
+                    await refreshAppData();
                 } else {
                     showAdminNotice(result.message, true);
                 }
