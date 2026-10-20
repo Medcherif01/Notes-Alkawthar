@@ -9,15 +9,58 @@ const XLSX = require('xlsx');
 const session = require('express-session');
 require('dotenv').config();
 
-// Import des données de section
-const {
-    allowedTeachersBoys,
-    teacherPermissionsBoys,
-    studentsByClassBoys,
-    allowedTeachersGirls,
-    teacherPermissionsGirls,
-    studentsByClassGirls
-} = require(path.join(__dirname, 'data-sections'));
+// Import des données de section et gestion du stockage persistant (db_storage.json)
+const fs = require('fs');
+const STORAGE_FILE = path.join(__dirname, '..', 'db_storage.json');
+const dataSections = require(path.join(__dirname, 'data-sections'));
+
+let dbStorage = {
+    boys: {
+        studentsByClass: JSON.parse(JSON.stringify(dataSections.studentsByClassBoys)),
+        teacherPermissions: JSON.parse(JSON.stringify(dataSections.teacherPermissionsBoys)),
+        allowedTeachers: JSON.parse(JSON.stringify(dataSections.allowedTeachersBoys))
+    },
+    girls: {
+        studentsByClass: JSON.parse(JSON.stringify(dataSections.studentsByClassGirls)),
+        teacherPermissions: JSON.parse(JSON.stringify(dataSections.teacherPermissionsGirls)),
+        allowedTeachers: JSON.parse(JSON.stringify(dataSections.allowedTeachersGirls))
+    },
+    notes: []
+};
+
+let inMemoryNotes = [];
+let noteIdCounter = 1;
+
+try {
+    if (fs.existsSync(STORAGE_FILE)) {
+        const fileContent = fs.readFileSync(STORAGE_FILE, 'utf-8');
+        const parsed = JSON.parse(fileContent);
+        if (parsed.boys) dbStorage.boys = parsed.boys;
+        if (parsed.girls) dbStorage.girls = parsed.girls;
+        if (parsed.notes && Array.isArray(parsed.notes)) {
+            inMemoryNotes = parsed.notes;
+            if (inMemoryNotes.length > 0) {
+                const maxId = Math.max(...inMemoryNotes.map(n => Number(n._id) || 0));
+                if (!isNaN(maxId)) noteIdCounter = maxId + 1;
+            }
+        }
+        console.log('✅ Persistent database loaded successfully from db_storage.json');
+    } else {
+        fs.writeFileSync(STORAGE_FILE, JSON.stringify(dbStorage, null, 2), 'utf-8');
+        console.log('✅ New persistent database created at db_storage.json');
+    }
+} catch (e) {
+    console.error('❌ Error loading db_storage.json, using defaults:', e);
+}
+
+function saveDatabaseToDisk() {
+    try {
+        dbStorage.notes = inMemoryNotes;
+        fs.writeFileSync(STORAGE_FILE, JSON.stringify(dbStorage, null, 2), 'utf-8');
+    } catch (e) {
+        console.error('❌ Error saving database to disk:', e);
+    }
+}
 
 const app = express();
 
@@ -28,10 +71,6 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'une-cle-secrete-pour-le-de
 async function connectToDatabase() {
     return null;
 }
-
-// In-Memory Notes Store
-let inMemoryNotes = [];
-let noteIdCounter = 1;
 
 class InMemoryNote {
     constructor(data) {
@@ -52,6 +91,7 @@ class InMemoryNote {
             throw new Error('Notes déjà existantes pour cet élève.');
         }
         inMemoryNotes.push(JSON.parse(JSON.stringify(this)));
+        saveDatabaseToDisk();
         return this;
     }
 }
@@ -115,12 +155,14 @@ const MemoryNoteModel = {
         const idx = inMemoryNotes.findIndex(n => String(n._id) === String(id));
         if (idx === -1) return null;
         inMemoryNotes[idx] = { ...inMemoryNotes[idx], ...updateData, updatedAt: new Date() };
+        saveDatabaseToDisk();
         return inMemoryNotes[idx];
     },
     async findByIdAndDelete(id) {
         const idx = inMemoryNotes.findIndex(n => String(n._id) === String(id));
         if (idx === -1) return null;
         const removed = inMemoryNotes.splice(idx, 1)[0];
+        saveDatabaseToDisk();
         return removed;
     },
     async countDocuments(query = {}) {
@@ -147,6 +189,7 @@ const MemoryNoteModel = {
                 }
             }
         });
+        if (count > 0) saveDatabaseToDisk();
         return { modifiedCount: count };
     }
 };
