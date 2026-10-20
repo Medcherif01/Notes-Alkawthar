@@ -111,7 +111,13 @@ class InMemoryNote {
             (n.section || 'boys') === (this.section || 'boys')
         );
         if (existingIdx !== -1) {
-            throw new Error('Notes déjà existantes pour cet élève.');
+            inMemoryNotes[existingIdx] = {
+                ...inMemoryNotes[existingIdx],
+                ...JSON.parse(JSON.stringify(this)),
+                updatedAt: new Date()
+            };
+            saveDatabaseToDisk();
+            return inMemoryNotes[existingIdx];
         }
         inMemoryNotes.push(JSON.parse(JSON.stringify(this)));
         saveDatabaseToDisk();
@@ -408,13 +414,11 @@ function buildMongoQueryForUser(username, semester, teacherPermissions) {
 }
 
 async function checkUserPermissionAndSubjectExists(username, classToCheck, subjectToCheck, sectionData) {
-    if (!sectionData.subjectsByClass[classToCheck] || !sectionData.subjectsByClass[classToCheck].includes(subjectToCheck)) {
-        return false;
-    }
-    const permissions = sectionData.teacherPermissions[username];
+    if (!username) return false;
+    const permissions = sectionData?.teacherPermissions?.[username];
     if (permissions === 'admin') return true;
-    if (!permissions) return false;
-    return permissions.some(p => p.subject === subjectToCheck && p.classes.includes(classToCheck));
+    if (!permissions || !Array.isArray(permissions)) return false;
+    return permissions.some(p => p.subject === subjectToCheck && Array.isArray(p.classes) && p.classes.includes(classToCheck));
 }
 
 // Routes publiques
@@ -551,16 +555,31 @@ app.post('/save-notes', requireAuth, sectionMiddleware, async (req, res) => {
     }
     try {
         const section = req.session.section || 'boys';
+        const cleanTc = (travauxClasse === '' || travauxClasse === null || travauxClasse === undefined) ? null : String(travauxClasse);
+        const cleanDev = (devoirs === '' || devoirs === null || devoirs === undefined) ? null : String(devoirs);
+        const cleanEva = (evaluation === '' || evaluation === null || evaluation === undefined) ? null : String(evaluation);
+        const cleanExam = (examen === '' || examen === null || examen === undefined) ? null : String(examen);
+
         const existingNote = await SafeNote.findOne({ class: studentClass, subject, studentName, semester, section });
         if (existingNote) {
-            return res.status(400).send(`❌ Notes déjà existantes pour cet élève.`);
+            await SafeNote.findByIdAndUpdate(existingNote._id, {
+                travauxClasse: cleanTc,
+                devoirs: cleanDev,
+                evaluation: cleanEva,
+                examen: cleanExam,
+                teacher,
+                updatedAt: new Date()
+            });
+            console.log(`✅ Note updated for ${studentName} (${studentClass} - ${subject})`);
+            return res.status(200).send('✅ Note mise à jour avec succès');
         }
+
         const note = SafeNote.createInstance({
             class: studentClass, subject, studentName, semester, section,
-            travauxClasse: (travauxClasse === '' || travauxClasse === null || travauxClasse === undefined) ? null : String(travauxClasse),
-            devoirs: (devoirs === '' || devoirs === null || devoirs === undefined) ? null : String(devoirs),
-            evaluation: (evaluation === '' || evaluation === null || evaluation === undefined) ? null : String(evaluation),
-            examen: (examen === '' || examen === null || examen === undefined) ? null : String(examen),
+            travauxClasse: cleanTc,
+            devoirs: cleanDev,
+            evaluation: cleanEva,
+            examen: cleanExam,
             teacher,
             approvedByAdmin: false,
             enteredInSystem: false,
@@ -568,6 +587,7 @@ app.post('/save-notes', requireAuth, sectionMiddleware, async (req, res) => {
             updatedAt: new Date()
         });
         await note.save();
+        console.log(`✅ Note created for ${studentName} (${studentClass} - ${subject})`);
         res.status(200).send('✅ Notes sauvegardées avec succès');
     } catch (error) {
         console.error('Error saving note:', error);

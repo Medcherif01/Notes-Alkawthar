@@ -234,11 +234,7 @@ function populatePermissionBasedDropdowns() {
         addOption(sortClassSelect, cls, cls);
     });
 
-    clearSelectOptions(sortSubjectSelect, 'Toutes les Matières');
-    currentUserPermissions.subjects.forEach(subj => {
-        addOption(sortSubjectSelect, subj, subj);
-    });
-    updateSortStudentOptionsForFilterClass('');
+    updateSortDropdownsForFilterClass('');
 }
 
 // ====================================
@@ -256,10 +252,10 @@ function setupEventListeners() {
     document.getElementById("skipToNextButton").addEventListener("click", moveToNextStudent);
     document.getElementById("noteForm").addEventListener("submit", handleFormSubmit);
     
-    // Filtres — ignorés si changement programmatique (depuis les icônes)
+    // Filtres — quand on choisit une classe, filtrer automatiquement les matières et élèves de cette classe
     sortClassSelect.addEventListener("change", () => {
         if (_suppressFilterChange) return;
-        updateSortStudentOptionsForFilterClass(sortClassSelect.value);
+        updateSortDropdownsForFilterClass(sortClassSelect.value);
         filterAndDisplayNotes();
     });
     sortSubjectSelect.addEventListener("change", () => {
@@ -323,13 +319,18 @@ function updateFormOnClassChange() {
     hideAutoProgressInfo();
     
     if (selectedClass) {
-        // Filtrer les élèves par section (CORRECTION POINT 2 et 3)
-        const sortedStudents = (studentsByClassGlobal[selectedClass] || []).sort();
+        // Filtrer les élèves et matières par classe
+        const sortedStudents = (studentsByClassGlobal[selectedClass] || []).slice().sort();
         sortedStudents.forEach(s => addOption(studentSelect, s, s));
         
         const subjectsToShow = (subjectsByClassGlobal[selectedClass] || [])
-            .filter(s => currentUserPermissions.subjects.includes(s)).sort();
+            .filter(s => currentUserPermissions.subjects.includes(s)).slice().sort();
         subjectsToShow.forEach(s => addOption(subjectSelect, s, s));
+
+        if (subjectsToShow.length === 1) {
+            subjectSelect.value = subjectsToShow[0];
+            updateFormOnSubjectChange();
+        }
     }
     updateLimits();
 }
@@ -651,6 +652,7 @@ function displayClassIcons() {
     // Synchroniser les selects filtres (reset silencieux — sans déclencher filterAndDisplayNotes)
     _suppressFilterChange = true;
     sortClassSelect.value   = '';
+    updateSortDropdownsForFilterClass('');
     sortSubjectSelect.value = '';
     sortStudentSelect.value = '';
     _suppressFilterChange = false;
@@ -699,6 +701,7 @@ function displaySubjectIcons(className) {
     // Synchroniser les selects filtres silencieusement
     _suppressFilterChange = true;
     sortClassSelect.value   = className;
+    updateSortDropdownsForFilterClass(className);
     sortSubjectSelect.value = '';
     sortStudentSelect.value = '';
     _suppressFilterChange = false;
@@ -958,21 +961,46 @@ function filterAndDisplayNotes() {
     displayNotesTable(filteredNotes);
 }
 
-function updateSortStudentOptionsForFilterClass(filterClass) {
+function updateSortDropdownsForFilterClass(filterClass) {
+    const prevStudent = sortStudentSelect.value;
+    const prevSubject = sortSubjectSelect.value;
+
+    // 1. Mettre à jour les élèves de la classe sélectionnée
     clearSelectOptions(sortStudentSelect, 'Tous les Élèves');
-    
     if (!filterClass) {
-        // Afficher tous les élèves de toutes les classes autorisées (filtrés par section)
         const allStudents = new Set();
-        currentUserPermissions.classes.forEach(cls => {
+        (currentUserPermissions.classes || []).forEach(cls => {
             (studentsByClassGlobal[cls] || []).forEach(s => allStudents.add(s));
         });
         Array.from(allStudents).sort().forEach(s => addOption(sortStudentSelect, s, s));
     } else {
-        // Afficher uniquement les élèves de la classe sélectionnée (déjà filtrés par section)
-        (studentsByClassGlobal[filterClass] || []).sort().forEach(s => {
-            addOption(sortStudentSelect, s, s);
+        const classStudents = (studentsByClassGlobal[filterClass] || []).slice().sort();
+        classStudents.forEach(s => addOption(sortStudentSelect, s, s));
+    }
+    if (prevStudent && Array.from(sortStudentSelect.options).some(o => o.value === prevStudent)) {
+        sortStudentSelect.value = prevStudent;
+    } else {
+        sortStudentSelect.value = '';
+    }
+
+    // 2. Mettre à jour les matières de la classe sélectionnée (uniquement celles de cette classe)
+    clearSelectOptions(sortSubjectSelect, 'Toutes les Matières');
+    if (!filterClass) {
+        (currentUserPermissions.subjects || []).forEach(subj => {
+            addOption(sortSubjectSelect, subj, subj);
         });
+    } else {
+        const classSubjects = (subjectsByClassGlobal[filterClass] || [])
+            .filter(subj => (currentUserPermissions.subjects || []).includes(subj))
+            .slice().sort();
+        classSubjects.forEach(subj => {
+            addOption(sortSubjectSelect, subj, subj);
+        });
+    }
+    if (prevSubject && Array.from(sortSubjectSelect.options).some(o => o.value === prevSubject)) {
+        sortSubjectSelect.value = prevSubject;
+    } else {
+        sortSubjectSelect.value = '';
     }
 }
 
