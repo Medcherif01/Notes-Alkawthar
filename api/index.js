@@ -1223,7 +1223,7 @@ app.get('/stats-notes', requireAuth, sectionMiddleware, async (req, res) => {
 
 // Admin management endpoints for classes, students, and teachers
 function getAdminSectionMaps(section) {
-    const sec = section === 'girls' ? 'girls' : 'boys';
+    const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
     if (!dbStorage[sec]) dbStorage[sec] = {};
     if (!dbStorage[sec].studentsByClass) {
         dbStorage[sec].studentsByClass = JSON.parse(JSON.stringify(sec === 'girls' ? studentsByClassGirls : studentsByClassBoys));
@@ -1238,6 +1238,10 @@ function getAdminSectionMaps(section) {
     // Always guarantee Mohamed admin credentials
     dbStorage[sec].allowedTeachers["Mohamed"] = "Med120786";
     dbStorage[sec].teacherPermissions["Mohamed"] = "admin";
+    if (sec === 'girls') {
+        dbStorage[sec].allowedTeachers["Zohra"] = "Zohra";
+        dbStorage[sec].teacherPermissions["Zohra"] = "admin";
+    }
 
     return {
         sec,
@@ -1257,7 +1261,8 @@ app.post('/admin/add-class', requireAuth, sectionMiddleware, (req, res) => {
     if (!className || !className.trim()) return res.status(400).json({ success: false, message: 'Nom de classe requis.' });
     const trimmed = className.trim();
     
-    const { studentsMap } = getAdminSectionMaps(req.session.section);
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const { studentsMap } = getAdminSectionMaps(section);
     if (!studentsMap[trimmed]) {
         studentsMap[trimmed] = [];
     }
@@ -1276,7 +1281,7 @@ app.post('/admin/update-class', requireAuth, sectionMiddleware, (req, res) => {
         return res.status(400).json({ success: false, message: 'Ancien et nouveau noms requis.' });
     }
     const trimmedNew = newClassName.trim();
-    const section = req.session.section || 'boys';
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
     const { studentsMap, permMap } = getAdminSectionMaps(section);
     
     if (studentsMap[oldClassName]) {
@@ -1317,7 +1322,7 @@ app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
     const { className } = req.body;
     if (!className) return res.status(400).json({ success: false, message: 'Nom de classe requis.' });
     
-    const section = req.session.section || 'boys';
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
     const { studentsMap, permMap } = getAdminSectionMaps(section);
     
     delete studentsMap[className];
@@ -1348,7 +1353,8 @@ app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
         return res.status(400).json({ success: false, message: 'Classe et nom d\'élève requis.' });
     }
     const trimmed = studentName.trim();
-    const { studentsMap } = getAdminSectionMaps(req.session.section);
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const { studentsMap } = getAdminSectionMaps(section);
     if (!studentsMap[className]) {
         studentsMap[className] = [];
     }
@@ -1373,7 +1379,7 @@ app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => 
     const trimmedNew = newName.trim();
     const destClass = (targetClass && targetClass.trim()) ? targetClass.trim() : className;
     
-    const section = req.session.section || 'boys';
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
     const { studentsMap } = getAdminSectionMaps(section);
     
     if (destClass === className) {
@@ -1416,7 +1422,7 @@ app.post('/admin/delete-student', requireAuth, sectionMiddleware, (req, res) => 
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className, studentName } = req.body;
-    const section = req.session.section || 'boys';
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
     const { studentsMap } = getAdminSectionMaps(section);
     if (studentsMap[className]) {
         studentsMap[className] = studentsMap[className].filter(s => s !== studentName);
@@ -1431,15 +1437,14 @@ const handleSaveTeacher = (req, res) => {
     if (permissions !== 'admin') {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
-    const { oldTeacherName, teacherName, password, subject, classes } = req.body;
-    if (!teacherName || !subject || !classes) {
-        return res.status(400).json({ success: false, message: 'Nom, matière et classes requis.' });
+    const { oldTeacherName, teacherName, password, subject, classes, assignments } = req.body;
+    if (!teacherName || (!subject && !assignments)) {
+        return res.status(400).json({ success: false, message: 'Nom et matière(s) requis.' });
     }
-    const section = req.session.section || 'boys';
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
     const { permMap, allowedMap } = getAdminSectionMaps(section);
     
     const trimmedName = teacherName.trim();
-    const classList = Array.isArray(classes) ? classes : classes.split(',').map(c => c.trim()).filter(Boolean);
     
     if (oldTeacherName && oldTeacherName !== trimmedName) {
         delete permMap[oldTeacherName];
@@ -1452,15 +1457,26 @@ const handleSaveTeacher = (req, res) => {
         permMap[trimmedName] = [];
     }
     
-    // Associer la matière et les classes à l'enseignant
-    if (oldTeacherName || req.body.replaceAssignments) {
-        permMap[trimmedName] = [{ subject: subject.trim(), classes: classList }];
-    } else {
-        const existingSubIdx = permMap[trimmedName].findIndex(p => p.subject.toLowerCase() === subject.trim().toLowerCase());
-        if (existingSubIdx !== -1) {
-            permMap[trimmedName][existingSubIdx] = { subject: subject.trim(), classes: classList };
+    if (Array.isArray(assignments)) {
+        permMap[trimmedName] = assignments.map(a => ({
+            subject: String(a.subject || '').trim(),
+            classes: Array.isArray(a.classes) ? a.classes : String(a.classes || '').split(',').map(c => c.trim()).filter(Boolean)
+        })).filter(a => a.subject && a.classes.length > 0);
+    } else if (subject && classes) {
+        const subList = String(subject).split(',').map(s => s.trim()).filter(Boolean);
+        const classList = Array.isArray(classes) ? classes : String(classes).split(',').map(c => c.trim()).filter(Boolean);
+        
+        if (oldTeacherName || req.body.replaceAssignments) {
+            permMap[trimmedName] = subList.map(sub => ({ subject: sub, classes: classList }));
         } else {
-            permMap[trimmedName].push({ subject: subject.trim(), classes: classList });
+            subList.forEach(sub => {
+                const existingIdx = permMap[trimmedName].findIndex(p => p.subject.toLowerCase() === sub.toLowerCase());
+                if (existingIdx !== -1) {
+                    permMap[trimmedName][existingIdx] = { subject: sub, classes: classList };
+                } else {
+                    permMap[trimmedName].push({ subject: sub, classes: classList });
+                }
+            });
         }
     }
     saveDatabaseToDisk();
@@ -1480,10 +1496,10 @@ app.post('/admin/delete-teacher', requireAuth, sectionMiddleware, (req, res) => 
     const { teacherName } = req.body;
     if (!teacherName) return res.status(400).json({ success: false, message: 'Nom d\'enseignant requis.' });
 
-    const section = req.session.section || 'boys';
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
     const { permMap, allowedMap } = getAdminSectionMaps(section);
 
-    if (permMap[teacherName] === 'admin' || teacherName === 'Mohamed') {
+    if (permMap[teacherName] === 'admin' || teacherName === 'Mohamed' || teacherName === 'Zohra') {
         return res.status(400).json({ success: false, message: 'Impossible de supprimer un compte administrateur racine.' });
     }
 
