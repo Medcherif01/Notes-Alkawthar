@@ -367,39 +367,43 @@ app.post('/login', (req, res) => {
     const userSection = section || 'boys';
     const sectionData = getSectionData(userSection);
     
-    if (sectionData.allowedTeachers[username] && sectionData.allowedTeachers[username] === password) {
-        req.session.user = username;
+    const cleanUsername = (username || '').trim();
+    const foundUserKey = Object.keys(sectionData.allowedTeachers).find(k => k.toLowerCase() === cleanUsername.toLowerCase());
+    const matchedUser = foundUserKey || cleanUsername;
+    
+    if (sectionData.allowedTeachers[matchedUser] && sectionData.allowedTeachers[matchedUser] === password) {
+        req.session.user = matchedUser;
         req.session.section = userSection;
         req.session.cookie.maxAge = SESSION_MAX_AGE;
-        
-        console.log(`✅ Login successful for user: ${username} in section: ${userSection}`);
-        res.status(200).json({ success: true, message: 'Connexion réussie' });
+        req.session.save(err => {
+            if (err) console.error("Session save error:", err);
+            console.log(`✅ Login successful for user: ${matchedUser} in section: ${userSection}`);
+            res.status(200).json({ success: true, message: 'Connexion réussie' });
+        });
     } else {
-        console.log(`❌ Login failed for user: ${username}`);
+        console.log(`❌ Login failed for user: ${cleanUsername}`);
         res.status(401).json({ success: false, message: 'Login ou mot de passe incorrect' });
     }
 });
 
 app.get('/logout', (req, res) => {
-    const user = req.session.user;
+    const user = req.session?.user;
     req.session.destroy(err => {
         if (err) console.error("❌ Error destroying session:", err);
-        console.log(`🚪 User ${user} logged out.`);
+        console.log(`🚪 User ${user || 'unknown'} logged out.`);
         res.clearCookie('connect.sid');
         res.status(200).json({ success: true, message: 'Déconnexion réussie' });
     });
 });
 
 function requireAuth(req, res, next) {
-    if (req.session && req.session.user) {
-        return next();
-    }
-    const authUser = req.headers['x-auth-user'] || req.query?.auth_user;
-    const authSection = req.headers['x-auth-section'] || req.query?.auth_section;
+    const authUser = req.headers['x-auth-user'] || req.query?.auth_user || (req.session && req.session.user);
+    const authSection = req.headers['x-auth-section'] || req.query?.auth_section || (req.session && req.session.section) || 'boys';
+    
     if (authUser) {
         if (!req.session) req.session = {};
         req.session.user = authUser;
-        if (authSection) req.session.section = authSection;
+        req.session.section = authSection;
         return next();
     }
     console.log(`🚫 User not authenticated trying to access ${req.path}`);
