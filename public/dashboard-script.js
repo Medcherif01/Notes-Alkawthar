@@ -198,6 +198,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         populatePermissionBasedDropdowns();
         setupEventListeners();
+
+        // Restaurer automatiquement le semestre et la navigation pour préserver l'état après un refresh (F5)
+        const savedSemester = localStorage.getItem('al_kawthar_semester') || 'S1';
+        const savedClass = localStorage.getItem('al_kawthar_class');
+        const savedSubject = localStorage.getItem('al_kawthar_subject');
+
+        const canRestoreSubject = savedClass && savedSubject && 
+            currentUserPermissions.classes.includes(savedClass) && 
+            (subjectsByClassGlobal[savedClass] || []).includes(savedSubject);
+
+        if (canRestoreSubject) {
+            iconNavClass = savedClass;
+            iconNavSubject = savedSubject;
+            setActiveSemester(savedSemester, true);
+            sortClassSelect.value = savedClass;
+            updateSortDropdownsForFilterClass(savedClass);
+            sortSubjectSelect.value = savedSubject;
+            classSelect.value = savedClass;
+            updateFormOnClassChange();
+            subjectSelect.value = savedSubject;
+            updateFormOnSubjectChange();
+        } else if (savedClass && currentUserPermissions.classes.includes(savedClass)) {
+            iconNavClass = savedClass;
+            iconNavSubject = null;
+            setActiveSemester(savedSemester, true);
+            sortClassSelect.value = savedClass;
+            updateSortDropdownsForFilterClass(savedClass);
+            classSelect.value = savedClass;
+            updateFormOnClassChange();
+        } else {
+            setActiveSemester(savedSemester, false);
+        }
         
     } catch (error) {
         console.error('❌ Erreur d\'initialisation:', error);
@@ -242,8 +274,8 @@ function populatePermissionBasedDropdowns() {
 // ====================================
 function setupEventListeners() {
     // Semestres
-    semester1Button.addEventListener('click', () => setActiveSemester('S1'));
-    semester2Button.addEventListener('click', () => setActiveSemester('S2'));
+    semester1Button.addEventListener('click', () => setActiveSemester('S1', false));
+    semester2Button.addEventListener('click', () => setActiveSemester('S2', false));
     
     // Formulaire
     classSelect.addEventListener("change", updateFormOnClassChange);
@@ -276,9 +308,11 @@ function setupEventListeners() {
 // ====================================
 // GESTION DES SEMESTRES
 // ====================================
-function setActiveSemester(semester) {
-    if (currentSemester === semester) return;
+function setActiveSemester(semester, preserveNavigation = false) {
     currentSemester = semester;
+    try {
+        localStorage.setItem('al_kawthar_semester', semester);
+    } catch (e) {}
 
     semester1Button.classList.toggle('active', semester === 'S1');
     semester2Button.classList.toggle('active', semester === 'S2');
@@ -292,14 +326,20 @@ function setActiveSemester(semester) {
     mainContainer.dataset.printSemester = semester;
     mainContainer.style.display = 'block';
 
-    // Reset silencieux des selects (sans déclencher filterAndDisplayNotes)
-    _suppressFilterChange = true;
-    [sortClassSelect, sortSubjectSelect, sortStudentSelect, classSelect].forEach(s => s.value = "");
-    _suppressFilterChange = false;
+    if (!preserveNavigation) {
+        // Reset silencieux des selects (sans déclencher filterAndDisplayNotes)
+        _suppressFilterChange = true;
+        [sortClassSelect, sortSubjectSelect, sortStudentSelect, classSelect].forEach(s => s.value = "");
+        _suppressFilterChange = false;
 
-    // Réinitialiser la navigation icônes
-    iconNavClass   = null;
-    iconNavSubject = null;
+        // Réinitialiser la navigation icônes
+        iconNavClass   = null;
+        iconNavSubject = null;
+        try {
+            localStorage.removeItem('al_kawthar_class');
+            localStorage.removeItem('al_kawthar_subject');
+        } catch (e) {}
+    }
 
     updateFormOnClassChange();
     fetchAndDisplayData();
@@ -324,7 +364,10 @@ function updateFormOnClassChange() {
         sortedStudents.forEach(s => addOption(studentSelect, s, s));
         
         const subjectsToShow = (subjectsByClassGlobal[selectedClass] || [])
-            .filter(s => currentUserPermissions.subjects.includes(s)).slice().sort();
+            .filter(s => {
+                if (isAdmin || (currentUserData?.permissions === 'admin')) return true;
+                return (currentUserPermissions.subjects || []).includes(s);
+            }).slice().sort();
         subjectsToShow.forEach(s => addOption(subjectSelect, s, s));
 
         if (subjectsToShow.length === 1) {
@@ -432,12 +475,14 @@ function loadExistingNotesForStudent() {
         return;
     }
     
+    const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
     // Chercher une note existante pour cet élève, cette matière et cette classe
     const existingNote = allNotesData.find(note => 
         note.class === selectedClass &&
-        note.subject === selectedSubject &&
-        note.studentName === selectedStudent &&
-        note.semester === currentSemester
+        (note.subject || '').trim().toLowerCase() === selectedSubject.trim().toLowerCase() &&
+        (note.studentName || '').trim().toLowerCase() === selectedStudent.trim().toLowerCase() &&
+        note.semester === currentSemester &&
+        (note.section || 'boys') === currentSec
     );
     
     if (existingNote) {
@@ -453,11 +498,10 @@ function loadExistingNotesForStudent() {
         // Afficher un message informatif
         showFormMessage(
             document.getElementById('formInfoMessage') || formSuccessMessage, 
-            '📝 Notes existantes chargées. Vous pouvez les modifier.', 
+            '📝 Notes existantes chargées de la base. Vous pouvez les modifier.', 
             false
         );
     } else {
-        // Aucune note existante, effacer les champs
         clearNoteInputs();
     }
 }
@@ -502,43 +546,41 @@ async function handleFormSubmit(e) {
     const evaVal  = normalizeVal(evaluationInput.value);
     const examVal = normalizeVal(examenInput.value);
 
+    const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+    const noteId = document.getElementById('noteForm').getAttribute('data-note-id');
+
     const noteData = {
+        id: (noteId && noteId !== 'null') ? noteId : null,
         class: selectedClass,
         subject: subject,
         studentName: studentName,
         semester: currentSemester,
+        section: currentSec,
         travauxClasse: tcVal   === '' ? null : tcVal,
         devoirs:       devVal  === '' ? null : devVal,
         evaluation:    evaVal  === '' ? null : evaVal,
         examen:        examVal === '' ? null : examVal
     };
     
-    // Vérifier s'il s'agit d'une mise à jour ou d'une création
-    const noteId = document.getElementById('noteForm').getAttribute('data-note-id');
-    
     try {
-        let response;
-        
-        if (noteId) {
-            // Mise à jour d'une note existante
-            response = await fetch(`/update-note/${noteId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(noteData)
-            });
-        } else {
-            // Création d'une nouvelle note
-            response = await fetch('/save-notes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(noteData)
-            });
-        }
+        const response = await fetch('/api/save-note-auto', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(noteData)
+        });
         
         if (response.ok) {
-            const action = noteId ? 'mise à jour' : 'enregistrement';
-            showFormMessage(formSuccessMessage, `✅ Note ${action === 'mise à jour' ? 'mise à jour' : 'enregistrée'} avec succès !`, false);
-            fetchAndDisplayData();
+            const result = await response.json();
+            const savedNote = result.note;
+            const action = noteId ? 'mise à jour' : 'enregistrée';
+            showFormMessage(formSuccessMessage, `✅ Note ${action} dans la base de données !`, false);
+            showNotification(`💾 Note de ${studentName} (${subject}) enregistrée dans la base`, false);
+            
+            // Mettre à jour l'ID sur le formulaire
+            if (savedNote && savedNote._id) {
+                document.getElementById('noteForm').setAttribute('data-note-id', savedNote._id);
+            }
+            await fetchAndDisplayData();
             
             if (autoProgressEnabled) {
                 setTimeout(() => {
@@ -761,9 +803,9 @@ function isSubjectComplete(className, subject, students) {
     if (!students || students.length === 0) return false;
     return students.every(student => {
         const note = allNotesData.find(n =>
-            n.class   === className  &&
-            n.subject === subject    &&
-            n.studentName === student &&
+            n.class === className &&
+            String(n.subject || '').trim().toLowerCase() === String(subject || '').trim().toLowerCase() &&
+            String(n.studentName || '').trim().toLowerCase() === String(student || '').trim().toLowerCase() &&
             n.semester === currentSemester
         );
         if (!note) return false;
@@ -800,14 +842,20 @@ function displayNotesForSubject(className, subject) {
     );
     filteredNotes.sort((a, b) => a.studentName.localeCompare(b.studentName));
 
-    // Calculer l'état de complétion
-    const students = studentsByClassGlobal[className] || [];
-    const complete  = isSubjectComplete(className, subject, students);
+    // Sauvegarder la sélection dans localStorage pour la restaurer au refresh
+    try {
+        localStorage.setItem('al_kawthar_class', className);
+        localStorage.setItem('al_kawthar_subject', subject);
+    } catch (e) {}
+
+    // Construire le tableau complet de TOUS les élèves de la classe
+    const students = (studentsByClassGlobal[className] || []).slice().sort();
+    const complete = isSubjectComplete(className, subject, students);
 
     // Breadcrumb + tableau
     let html = `
-        <div class="icon-nav-table-header">
-            <div class="icon-nav-breadcrumb">
+        <div class="icon-nav-table-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.2rem;">
+            <div class="icon-nav-breadcrumb" style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;">
                 <button class="icon-nav-back" onclick="displayClassIcons()">
                     <i class="fas fa-arrow-left"></i> Classes
                 </button>
@@ -821,27 +869,56 @@ function displayNotesForSubject(className, subject) {
                 </span>
                 ${complete ? '<span class="breadcrumb-complete"><i class="fas fa-check-circle"></i> Matière complète</span>' : ''}
             </div>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <span style="font-size:0.78rem;font-weight:600;padding:0.4rem 0.85rem;border-radius:99px;background:#ECFDF5;color:#059669;border:1px solid #A7F3D0;display:inline-flex;align-items:center;gap:0.4rem;">
+                    <i class="fas fa-database"></i> <span>Base de données connectée</span>
+                </span>
+                <button type="button" onclick="saveAllTableNotes('${className}', '${subject.replace(/'/g, "\\'")}')" class="admin-btn-secondary" style="font-size:0.82rem;font-weight:700;padding:0.45rem 1rem;border-radius:10px;background:#4F46E5;color:white;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:0.45rem;box-shadow:0 2px 8px rgba(79,70,229,0.3);transition:all 0.2s;">
+                    <i class="fas fa-save"></i> <span>Enregistrer tout</span>
+                </button>
+            </div>
         </div>
     `;
 
     outputDiv.innerHTML = html;
 
-    // Appeler displayNotesTable qui gère aussi les bulk actions
-    if (filteredNotes.length === 0) {
-        outputDiv.innerHTML += `<div class="icon-nav-no-notes"><i class="fas fa-inbox"></i><p>Aucune note enregistrée pour cette matière.<br>Utilisez le formulaire ci-dessus pour saisir les notes.</p></div>`;
+    if (students.length === 0) {
+        outputDiv.innerHTML += `<div class="icon-nav-no-notes"><i class="fas fa-inbox"></i><p>Aucun élève inscrit dans cette classe.</p></div>`;
         currentlyDisplayedNotes = [];
         updateBulkActionsVisibility();
-    } else {
-        // Créer un conteneur séparé pour le tableau
-        const tableContainer = document.createElement('div');
-        tableContainer.id = 'table-container-inner';
-        outputDiv.appendChild(tableContainer);
-        // Temporairement pointer outputDiv vers tableContainer pour displayNotesTable
-        const origOutputDiv = outputDiv;
-        const savedHTML = outputDiv.innerHTML;
-        // Patch : on insère le tableau dans le conteneur
-        displayNotesTableInto(filteredNotes, tableContainer);
+        return;
     }
+
+    const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+    const rosterNotes = students.map(studentName => {
+        const found = allNotesData.find(n =>
+            n.class === className &&
+            String(n.subject || '').trim().toLowerCase() === String(subject || '').trim().toLowerCase() &&
+            String(n.studentName || '').trim().toLowerCase() === String(studentName || '').trim().toLowerCase() &&
+            n.semester === currentSemester &&
+            (n.section || 'boys') === currentSec
+        );
+        if (found) return found;
+        return {
+            _id: null,
+            class: className,
+            subject: subject,
+            studentName: studentName,
+            semester: currentSemester,
+            section: currentUserData?.section || 'boys',
+            travauxClasse: null,
+            devoirs: null,
+            evaluation: null,
+            examen: null,
+            enteredInSystem: false,
+            approvedByAdmin: false
+        };
+    });
+
+    const tableContainer = document.createElement('div');
+    tableContainer.id = 'table-container-inner';
+    outputDiv.appendChild(tableContainer);
+    displayNotesTableInto(rosterNotes, tableContainer);
 }
 
 // Version de displayNotesTable qui écrit dans un conteneur cible
@@ -883,34 +960,44 @@ function displayNotesTableInto(notes, container) {
             totalDisplay = String(parseFloat(total.toFixed(4)));
         }
 
+        const safeId = note._id ? `'${note._id}'` : 'null';
+        const safeClass = `'${(note.class || '').replace(/'/g, "\\'")}'`;
+        const safeSubject = `'${(note.subject || '').replace(/'/g, "\\'")}'`;
+        const safeStudent = `'${(note.studentName || '').replace(/'/g, "\\'")}'`;
+
         const enteredChecked = note.enteredInSystem ? 'checked' : '';
-        const enteredCheckbox = `<input type="checkbox" ${enteredChecked} onchange="toggleEnteredInSystem('${note._id}', this.checked)" title="Marquer comme saisi">`;
+        const enteredCheckbox = `<input type="checkbox" ${enteredChecked} onchange="toggleEnteredInSystem(${safeId}, this.checked, ${safeClass}, ${safeSubject}, ${safeStudent})" title="Marquer comme saisi">`;
 
         let approvedCheckbox = '';
         if (isAdmin) {
             const approvedChecked = note.approvedByAdmin ? 'checked' : '';
-            approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin('${note._id}', this.checked)" title="Approuver"></td>`;
+            approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin(${safeId}, this.checked, ${safeClass}, ${safeSubject}, ${safeStudent})" title="Approuver"></td>`;
         }
 
-        const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'travauxClasse', this.value)">`;
-        const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'devoirs',      this.value)">`;
-        const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'evaluation',   this.value)">`;
-        const examInput = `<input type="number" value="${exam}" placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'examen',       this.value)">`;
+        const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'travauxClasse', this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
+        const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'devoirs',      this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
+        const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'evaluation',   this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
+        const examInput = `<input type="number" value="${exam}" placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'examen',       this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
+
+        const rowId = note._id ? `note-row-${note._id}` : `temp-row-${encodeURIComponent(note.studentName)}`;
+        const totalId = note._id ? `total-${note._id}` : `total-temp-${encodeURIComponent(note.studentName)}`;
 
         tableHTML += `
-            <tr id="note-row-${note._id}">
+            <tr id="${rowId}">
                 <td class="student-name-cell">${note.studentName}</td>
                 <td>${tcInput}</td>
                 <td>${devInput}</td>
                 <td>${evaInput}</td>
                 <td>${examInput}</td>
-                <td><strong id="total-${note._id}">${totalDisplay}</strong></td>
+                <td><strong id="${totalId}">${totalDisplay}</strong></td>
                 <td>${enteredCheckbox}</td>
                 ${approvedCheckbox}
                 <td>
-                    <button onclick="deleteNote('${note._id}')" class="delete-btn-inline">
-                        <i class="fas fa-trash"></i> Supprimer
-                    </button>
+                    ${note._id ? `
+                        <button onclick="deleteNote('${note._id}')" class="delete-btn-inline">
+                            <i class="fas fa-trash"></i> Supprimer
+                        </button>
+                    ` : '<span style="color:#94a3b8;font-size:0.8rem;">Prêt à saisir</span>'}
                 </td>
             </tr>
         `;
@@ -965,7 +1052,7 @@ function updateSortDropdownsForFilterClass(filterClass) {
     const prevStudent = sortStudentSelect.value;
     const prevSubject = sortSubjectSelect.value;
 
-    // 1. Mettre à jour les élèves de la classe sélectionnée
+    // 1. Mettre à jour les élèves de la classe sélectionnée (strictement ceux de cette classe)
     clearSelectOptions(sortStudentSelect, 'Tous les Élèves');
     if (!filterClass) {
         const allStudents = new Set();
@@ -983,7 +1070,7 @@ function updateSortDropdownsForFilterClass(filterClass) {
         sortStudentSelect.value = '';
     }
 
-    // 2. Mettre à jour les matières de la classe sélectionnée (uniquement celles de cette classe)
+    // 2. Mettre à jour les matières de la classe sélectionnée (strictement celles enseignées dans cette classe)
     clearSelectOptions(sortSubjectSelect, 'Toutes les Matières');
     if (!filterClass) {
         (currentUserPermissions.subjects || []).forEach(subj => {
@@ -991,7 +1078,10 @@ function updateSortDropdownsForFilterClass(filterClass) {
         });
     } else {
         const classSubjects = (subjectsByClassGlobal[filterClass] || [])
-            .filter(subj => (currentUserPermissions.subjects || []).includes(subj))
+            .filter(subj => {
+                if (isAdmin || (currentUserData?.permissions === 'admin')) return true;
+                return (currentUserPermissions.subjects || []).includes(subj);
+            })
             .slice().sort();
         classSubjects.forEach(subj => {
             addOption(sortSubjectSelect, subj, subj);
@@ -1069,19 +1159,24 @@ function displayNotesTable(notes) {
             totalDisplay = String(parseFloat(total.toFixed(4)));
         }
 
+        const safeId = note._id ? `'${note._id}'` : 'null';
+        const safeClass = `'${(note.class || '').replace(/'/g, "\\'")}'`;
+        const safeSubject = `'${(note.subject || '').replace(/'/g, "\\'")}'`;
+        const safeStudent = `'${(note.studentName || '').replace(/'/g, "\\'")}'`;
+
         const enteredChecked  = note.enteredInSystem  ? 'checked' : '';
-        const enteredCheckbox = `<input type="checkbox" ${enteredChecked} onchange="toggleEnteredInSystem('${note._id}', this.checked)" title="Marquer comme saisi">`;
+        const enteredCheckbox = `<input type="checkbox" ${enteredChecked} onchange="toggleEnteredInSystem(${safeId}, this.checked, ${safeClass}, ${safeSubject}, ${safeStudent})" title="Marquer comme saisi">`;
 
         let approvedCheckbox = '';
         if (isAdmin) {
             const approvedChecked = note.approvedByAdmin ? 'checked' : '';
-            approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin('${note._id}', this.checked)" title="Approuver"></td>`;
+            approvedCheckbox = `<td><input type="checkbox" ${approvedChecked} onchange="toggleApprovedByAdmin(${safeId}, this.checked, ${safeClass}, ${safeSubject}, ${safeStudent})" title="Approuver"></td>`;
         }
 
-        const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'travauxClasse', this.value)">`;
-        const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'devoirs',      this.value)">`;
-        const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'evaluation',   this.value)">`;
-        const examInput = `<input type="number" value="${exam}" placeholder="—" min="0" step="any" onchange="updateNoteField('${note._id}', 'examen',       this.value)">`;
+        const tcInput   = `<input type="number" value="${tc}"   placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'travauxClasse', this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
+        const devInput  = `<input type="number" value="${dev}"  placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'devoirs',      this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
+        const evaInput  = `<input type="number" value="${eva}"  placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'evaluation',   this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
+        const examInput = `<input type="number" value="${exam}" placeholder="—" min="0" step="any" onchange="updateNoteField(${safeId}, 'examen',       this.value, ${safeClass}, ${safeSubject}, ${safeStudent})">`;
 
         tableHTML += `
             <tr id="note-row-${note._id}">
@@ -1109,94 +1204,219 @@ function displayNotesTable(notes) {
 }
 
 // ====================================
-// GESTION DES CHECKBOXES (NOUVEAU)
+// GESTION DES CHECKBOXES (PERSISTANTES DANS LA BASE)
 // ====================================
-window.toggleEnteredInSystem = async function(noteId, isEntered) {
+window.toggleEnteredInSystem = async function(noteId, isEntered, studentClass, subject, studentName) {
+    const cls = studentClass || iconNavClass || sortClassSelect?.value;
+    const subj = subject || iconNavSubject || sortSubjectSelect?.value;
+    const student = studentName;
+    const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+
+    const payload = {
+        id: (noteId && noteId !== 'null' && noteId !== 'undefined') ? String(noteId) : null,
+        class: cls,
+        subject: subj,
+        studentName: student,
+        semester: currentSemester,
+        section: currentSec,
+        field: 'enteredInSystem',
+        value: Boolean(isEntered)
+    };
+
     try {
-        const response = await fetch(`/update-note/${noteId}`, {
-            method: 'PUT',
+        const response = await fetch('/api/save-note-auto', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enteredInSystem: isEntered })
+            body: JSON.stringify(payload)
         });
-        
+
         if (response.ok) {
-            console.log(`✅ Note ${noteId} - Saisi: ${isEntered}`);
-            fetchAndDisplayData();
+            const result = await response.json();
+            const savedNote = result.note;
+            const existingIdx = allNotesData.findIndex(n => String(n._id) === String(savedNote._id) || (
+                n.class === savedNote.class &&
+                n.subject === savedNote.subject &&
+                n.studentName === savedNote.studentName &&
+                n.semester === savedNote.semester
+            ));
+            if (existingIdx !== -1) allNotesData[existingIdx] = savedNote;
+            else allNotesData.push(savedNote);
+            showNotification(`✅ Note mise à jour : Statut saisi = ${isEntered ? 'Oui' : 'Non'}`, false);
         } else {
-            alert('Erreur lors de la mise à jour');
-            fetchAndDisplayData();
+            showNotification('❌ Erreur lors de la mise à jour du statut dans la base.', true);
         }
     } catch (error) {
         console.error('Error updating enteredInSystem:', error);
-        alert('Erreur réseau');
-        fetchAndDisplayData();
+        showNotification('❌ Erreur réseau lors de la mise à jour.', true);
     }
 };
 
-window.toggleApprovedByAdmin = async function(noteId, isApproved) {
+window.toggleApprovedByAdmin = async function(noteId, isApproved, studentClass, subject, studentName) {
     if (!isAdmin) {
-        alert('Seuls les administrateurs peuvent approuver les notes.');
-        fetchAndDisplayData();
+        showNotification('❌ Seuls les administrateurs peuvent approuver les notes.', true);
         return;
     }
-    
+
+    const cls = studentClass || iconNavClass || sortClassSelect?.value;
+    const subj = subject || iconNavSubject || sortSubjectSelect?.value;
+    const student = studentName;
+    const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+
+    const payload = {
+        id: (noteId && noteId !== 'null' && noteId !== 'undefined') ? String(noteId) : null,
+        class: cls,
+        subject: subj,
+        studentName: student,
+        semester: currentSemester,
+        section: currentSec,
+        field: 'approvedByAdmin',
+        value: Boolean(isApproved)
+    };
+
     try {
-        const response = await fetch(`/update-note/${noteId}`, {
-            method: 'PUT',
+        const response = await fetch('/api/save-note-auto', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ approvedByAdmin: isApproved })
+            body: JSON.stringify(payload)
         });
-        
+
         if (response.ok) {
-            console.log(`✅ Note ${noteId} - Approuvé: ${isApproved}`);
-            fetchAndDisplayData();
+            const result = await response.json();
+            const savedNote = result.note;
+            const existingIdx = allNotesData.findIndex(n => String(n._id) === String(savedNote._id) || (
+                n.class === savedNote.class &&
+                n.subject === savedNote.subject &&
+                n.studentName === savedNote.studentName &&
+                n.semester === savedNote.semester
+            ));
+            if (existingIdx !== -1) allNotesData[existingIdx] = savedNote;
+            else allNotesData.push(savedNote);
+            showNotification(`✅ Note mise à jour : Approbation = ${isApproved ? 'Oui' : 'Non'}`, false);
         } else {
-            alert('Erreur lors de l\'approbation');
-            fetchAndDisplayData();
+            showNotification('❌ Erreur lors de l\'approbation dans la base.', true);
         }
     } catch (error) {
         console.error('Error updating approvedByAdmin:', error);
-        alert('Erreur réseau');
-        fetchAndDisplayData();
+        showNotification('❌ Erreur réseau lors de l\'approbation.', true);
     }
 };
 
 // ====================================
-// MODIFICATION INLINE DES NOTES
+// MODIFICATION INLINE DES NOTES (SAUVEGARDE PERSISTANTE DANS LA BASE)
 // ====================================
-window.updateNoteField = async function(noteId, field, value) {
-    // normalizeVal: 0, "0", "", null → null (case vide). Sinon String exact.
+window.updateNoteField = async function(noteId, field, value, studentClass, subject, studentName) {
     const normalized = normalizeVal(value);
     const cleanValue = normalized === '' ? null : normalized;
-    
-    const updateData = {};
-    updateData[field] = cleanValue;
-    
+
+    const cls = studentClass || iconNavClass || sortClassSelect?.value || classSelect?.value;
+    const subj = subject || iconNavSubject || sortSubjectSelect?.value || subjectSelect?.value;
+    const student = studentName;
+    const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+
+    if (!cls || !subj || !student || !currentSemester) {
+        console.error('Données manquantes pour updateNoteField:', { cls, subj, student, currentSemester });
+        return;
+    }
+
+    const payload = {
+        id: (noteId && noteId !== 'null' && noteId !== 'undefined') ? String(noteId) : null,
+        class: cls,
+        subject: subj,
+        studentName: student,
+        semester: currentSemester,
+        section: currentSec,
+        field: field,
+        value: cleanValue
+    };
+
+    // Trouver l'élément input pour le retour visuel
+    const rowEl = (noteId && noteId !== 'null') ? document.getElementById(`note-row-${noteId}`) : document.getElementById(`temp-row-${encodeURIComponent(student)}`);
+    const inputEl = rowEl ? rowEl.querySelector(`input[onchange*="'${field}'"]`) : null;
+
     try {
-        const response = await fetch(`/update-note/${noteId}`, {
-            method: 'PUT',
+        const response = await fetch('/api/save-note-auto', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updateData)
+            body: JSON.stringify(payload)
         });
-        
+
         if (response.ok) {
-            console.log(`✅ Note ${noteId} - ${field} mis à jour: ${cleanValue}`);
-            
-            // Mettre à jour le total localement sans recharger toute la page
-            const note = allNotesData.find(n => n._id === noteId);
-            if (note) {
-                note[field] = cleanValue; // cleanValue est String ou null
-                updateTotal(noteId, note);
+            const result = await response.json();
+            const savedNote = result.note;
+            console.log(`💾 Note enregistrée avec succès dans la base de données:`, savedNote);
+
+            // Mettre à jour allNotesData
+            const existingIdx = allNotesData.findIndex(n => String(n._id) === String(savedNote._id) || (
+                n.class === savedNote.class &&
+                n.subject === savedNote.subject &&
+                n.studentName === savedNote.studentName &&
+                n.semester === savedNote.semester
+            ));
+            if (existingIdx !== -1) {
+                allNotesData[existingIdx] = savedNote;
+            } else {
+                allNotesData.push(savedNote);
             }
+
+            // Si c'était un temp-row, transformer la ligne avec l'ID officiel
+            if (rowEl && (!noteId || noteId === 'null')) {
+                rowEl.id = `note-row-${savedNote._id}`;
+                const totalEl = rowEl.querySelector(`strong[id^="total-"]`);
+                if (totalEl) totalEl.id = `total-${savedNote._id}`;
+
+                const tcInp = rowEl.querySelector('input[onchange*="travauxClasse"]');
+                const devInp = rowEl.querySelector('input[onchange*="devoirs"]');
+                const evaInp = rowEl.querySelector('input[onchange*="evaluation"]');
+                const examInp = rowEl.querySelector('input[onchange*="examen"]');
+                const enteredInp = rowEl.querySelector('input[onchange*="toggleEnteredInSystem"]');
+                const approvedInp = rowEl.querySelector('input[onchange*="toggleApprovedByAdmin"]');
+                const actionCell = rowEl.querySelector('td:last-child');
+
+                const safeId = `'${savedNote._id}'`;
+                const sCls = `'${(cls || '').replace(/'/g, "\\'")}'`;
+                const sSubj = `'${(subj || '').replace(/'/g, "\\'")}'`;
+                const sStud = `'${(student || '').replace(/'/g, "\\'")}'`;
+
+                if (tcInp) tcInp.setAttribute('onchange', `updateNoteField(${safeId}, 'travauxClasse', this.value, ${sCls}, ${sSubj}, ${sStud})`);
+                if (devInp) devInp.setAttribute('onchange', `updateNoteField(${safeId}, 'devoirs', this.value, ${sCls}, ${sSubj}, ${sStud})`);
+                if (evaInp) evaInp.setAttribute('onchange', `updateNoteField(${safeId}, 'evaluation', this.value, ${sCls}, ${sSubj}, ${sStud})`);
+                if (examInp) examInp.setAttribute('onchange', `updateNoteField(${safeId}, 'examen', this.value, ${sCls}, ${sSubj}, ${sStud})`);
+                if (enteredInp) enteredInp.setAttribute('onchange', `toggleEnteredInSystem(${safeId}, this.checked, ${sCls}, ${sSubj}, ${sStud})`);
+                if (approvedInp) approvedInp.setAttribute('onchange', `toggleApprovedByAdmin(${safeId}, this.checked, ${sCls}, ${sSubj}, ${sStud})`);
+
+                if (actionCell) {
+                    actionCell.innerHTML = `
+                        <button onclick="deleteNote('${savedNote._id}')" class="delete-btn-inline">
+                            <i class="fas fa-trash"></i> Supprimer
+                        </button>
+                    `;
+                }
+            }
+
+            // Mettre à jour le total calculé
+            updateTotal(savedNote._id, savedNote);
+
+            // Effet visuel immédiat de sauvegarde réussie (bordure verte + animation douce)
+            if (inputEl) {
+                inputEl.style.borderColor = '#10B981';
+                inputEl.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.25)';
+                setTimeout(() => {
+                    inputEl.style.borderColor = '';
+                    inputEl.style.boxShadow = '';
+                }, 1500);
+            }
+            showNotification('💾 Note enregistrée dans la base de données', false);
         } else {
-            const error = await response.text();
-            alert(`Erreur: ${error}`);
-            fetchAndDisplayData(); // Recharger en cas d'erreur
+            const err = await response.json().catch(() => ({ message: 'Erreur' }));
+            showNotification(`❌ ${err.message || 'Erreur lors de l\'enregistrement'}`, true);
+            if (inputEl) {
+                inputEl.style.borderColor = '#EF4444';
+                inputEl.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.25)';
+            }
         }
     } catch (error) {
         console.error('Error updating note field:', error);
-        alert('Erreur réseau');
-        fetchAndDisplayData();
+        showNotification('❌ Erreur réseau lors de l\'enregistrement', true);
     }
 };
 
@@ -1380,62 +1600,126 @@ function updateBulkActionsVisibility() {
     }
 }
 
-// Fonction générique pour mettre à jour en masse
+// Fonction générique pour mettre à jour en masse (avec persistance en base de données)
 async function bulkUpdateNotes(field, newState, buttonId, buttonIcon, buttonText, actionName) {
     if (currentlyDisplayedNotes.length === 0) {
-        alert('Aucune note à traiter');
+        showNotification('Aucune note à traiter', true);
         return;
     }
     
     const message = `Voulez-vous ${actionName} toutes les ${currentlyDisplayedNotes.length} notes affichées ?`;
-    
     if (!confirm(message)) return;
     
-    // Désactiver le bouton pendant le traitement
     const button = document.getElementById(buttonId);
-    const originalHTML = button.innerHTML;
-    button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Traitement...</span>';
+    const originalHTML = button ? button.innerHTML : '';
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Traitement...</span>';
+    }
     
     let successCount = 0;
     let failCount = 0;
     
-    // Traiter toutes les notes affichées
     for (const note of currentlyDisplayedNotes) {
         try {
-            const updateData = {};
-            updateData[field] = newState;
+            const payload = {
+                id: (note._id && note._id !== 'null' && note._id !== 'undefined') ? String(note._id) : null,
+                class: note.class || iconNavClass || sortClassSelect?.value,
+                subject: note.subject || iconNavSubject || sortSubjectSelect?.value,
+                studentName: note.studentName,
+                semester: currentSemester,
+                section: currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys',
+                field: field,
+                value: newState
+            };
             
-            const response = await fetch(`/update-note/${note._id}`, {
-                method: 'PUT',
+            const response = await fetch('/api/save-note-auto', {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updateData)
+                body: JSON.stringify(payload)
             });
             
             if (response.ok) {
+                const resData = await response.json();
+                if (resData.note) {
+                    note._id = resData.note._id;
+                    note[field] = newState;
+                }
                 successCount++;
-                note[field] = newState; // Mise à jour locale
             } else {
                 failCount++;
             }
         } catch (error) {
-            console.error(`Error updating note ${note._id}:`, error);
+            console.error(`Error updating note:`, error);
             failCount++;
         }
     }
     
-    // Réactiver le bouton
-    button.disabled = false;
-    button.innerHTML = originalHTML;
+    if (button) {
+        button.disabled = false;
+        button.innerHTML = originalHTML;
+    }
     
-    // Afficher le résultat
-    const resultMessage = `✅ ${successCount} note(s) mise(s) à jour`;
-    const errorMessage = failCount > 0 ? `\n❌ ${failCount} erreur(s)` : '';
-    alert(resultMessage + errorMessage);
-    
-    // Recharger les données
+    showNotification(`✅ ${successCount} note(s) mise(s) à jour dans la base de données.`, false);
     await fetchAndDisplayData();
 }
+
+// Fonction pour enregistrer d'un coup toutes les notes affichées dans le tableau
+window.saveAllTableNotes = async function(className, subject) {
+    const table = document.querySelector('#table-container-inner table');
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
+    const notesToSave = [];
+    
+    rows.forEach(tr => {
+        const studentNameCell = tr.querySelector('.student-name-cell');
+        if (!studentNameCell) return;
+        const studentName = studentNameCell.textContent.trim();
+        const tcInp = tr.querySelector('input[onchange*="travauxClasse"]');
+        const devInp = tr.querySelector('input[onchange*="devoirs"]');
+        const evaInp = tr.querySelector('input[onchange*="evaluation"]');
+        const examInp = tr.querySelector('input[onchange*="examen"]');
+        const enteredInp = tr.querySelector('input[onchange*="toggleEnteredInSystem"]');
+        const approvedInp = tr.querySelector('input[onchange*="toggleApprovedByAdmin"]');
+
+        let noteId = null;
+        if (tr.id && tr.id.startsWith('note-row-')) {
+            noteId = tr.id.replace('note-row-', '');
+        }
+
+        notesToSave.push({
+            id: (noteId && noteId !== 'null') ? noteId : null,
+            class: className,
+            subject: subject,
+            studentName: studentName,
+            semester: currentSemester,
+            section: currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys',
+            travauxClasse: normalizeVal(tcInp?.value),
+            devoirs: normalizeVal(devInp?.value),
+            evaluation: normalizeVal(evaInp?.value),
+            examen: normalizeVal(examInp?.value),
+            enteredInSystem: enteredInp ? enteredInp.checked : false,
+            approvedByAdmin: approvedInp ? approvedInp.checked : false
+        });
+    });
+
+    try {
+        const res = await fetch('/api/save-notes-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: notesToSave })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            showNotification(`💾 ${data.count} note(s) enregistrée(s) avec succès dans la base de données !`, false);
+            await fetchAndDisplayData();
+        } else {
+            showNotification('❌ Erreur lors de la sauvegarde.', true);
+        }
+    } catch (e) {
+        showNotification('❌ Erreur réseau lors de la sauvegarde.', true);
+    }
+};
 
 // Fonction pour cocher tous les "Saisi"
 async function setAllEntered() {

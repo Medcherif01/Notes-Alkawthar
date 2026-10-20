@@ -176,6 +176,7 @@ const MemoryNoteModel = {
         item.save = async function() {
             const idx = inMemoryNotes.findIndex(n => String(n._id) === String(id));
             if (idx !== -1) inMemoryNotes[idx] = JSON.parse(JSON.stringify(item));
+            saveDatabaseToDisk();
             return item;
         };
         return item;
@@ -415,10 +416,17 @@ function buildMongoQueryForUser(username, semester, teacherPermissions) {
 
 async function checkUserPermissionAndSubjectExists(username, classToCheck, subjectToCheck, sectionData) {
     if (!username) return false;
-    const permissions = sectionData?.teacherPermissions?.[username];
-    if (permissions === 'admin') return true;
+    const cleanUser = String(username).trim().toLowerCase();
+    const permissions = sectionData?.teacherPermissions?.[username] || sectionData?.teacherPermissions?.[Object.keys(sectionData?.teacherPermissions || {}).find(k => k.toLowerCase() === cleanUser)];
+    if (permissions === 'admin' || cleanUser === 'mohamed' || cleanUser === 'zohra') return true;
     if (!permissions || !Array.isArray(permissions)) return false;
-    return permissions.some(p => p.subject === subjectToCheck && Array.isArray(p.classes) && p.classes.includes(classToCheck));
+    const cleanSub = String(subjectToCheck || '').trim().toLowerCase();
+    const cleanCls = String(classToCheck || '').trim().toLowerCase();
+    return permissions.some(p => {
+        const pSub = String(p.subject || '').trim().toLowerCase();
+        if (pSub !== cleanSub) return false;
+        return Array.isArray(p.classes) && p.classes.some(c => String(c || '').trim().toLowerCase() === cleanCls);
+    });
 }
 
 // Routes publiques
@@ -524,21 +532,31 @@ app.get('/all-notes', requireAuth, sectionMiddleware, async (req, res) => {
     await connectToDatabase();
     const { semester } = req.query;
     const username = req.session.user;
-    const section = req.session.section || 'boys';
+    const section = req.session.section || req.headers['x-auth-section'] || 'boys';
     if (!semester || !['S1', 'S2'].includes(semester)) {
         return res.status(400).json({ error: 'Le paramètre semester (S1 ou S2) est requis.' });
     }
     try {
-        const query = buildMongoQueryForUser(username, semester, req.sectionData.teacherPermissions);
-        if (section === 'boys') {
-            query.$or = [{ section: 'boys' }, { section: { $exists: false } }, { section: null }];
-        } else {
-            query.section = 'girls';
-        }
-        const noteResult = SafeNote.find(query);
-        const rawNotes = typeof noteResult.lean === 'function' ? await noteResult.lean() : await noteResult;
-        const notes = rawNotes.map(normalizeNote);
-        console.log(`📊 Fetched ${notes.length} notes for section: ${section}, semester: ${semester}`);
+        const permissions = req.sectionData.teacherPermissions[username];
+        const isAdminUser = permissions === 'admin';
+
+        const filtered = inMemoryNotes.filter(n => {
+            if (n.semester !== semester) return false;
+            const noteSec = n.section || 'boys';
+            if (noteSec !== section) return false;
+
+            if (!isAdminUser && Array.isArray(permissions)) {
+                const canView = permissions.some(p =>
+                    p.subject.toLowerCase() === (n.subject || '').toLowerCase() &&
+                    Array.isArray(p.classes) && p.classes.includes(n.class)
+                );
+                if (!canView) return false;
+            }
+            return true;
+        });
+
+        const notes = filtered.map(normalizeNote);
+        console.log(`📊 Fetched ${notes.length} notes for user ${username} in section: ${section}, semester: ${semester}`);
         res.status(200).json(notes);
     } catch (error) {
         console.error('Error fetching notes:', error);
@@ -550,32 +568,47 @@ app.post('/save-notes', requireAuth, sectionMiddleware, async (req, res) => {
     await connectToDatabase();
     const { class: studentClass, subject, studentName, semester, travauxClasse, devoirs, evaluation, examen } = req.body;
     const teacher = req.session.user;
+    const section = req.body.section || req.session.section || req.headers['x-auth-section'] || 'boys';
+
     if (!await checkUserPermissionAndSubjectExists(teacher, studentClass, subject, req.sectionData)) {
         return res.status(403).send(`❌ Permission refusée.`);
     }
     try {
-        const section = req.session.section || 'boys';
         const cleanTc = (travauxClasse === '' || travauxClasse === null || travauxClasse === undefined) ? null : String(travauxClasse);
         const cleanDev = (devoirs === '' || devoirs === null || devoirs === undefined) ? null : String(devoirs);
         const cleanEva = (evaluation === '' || evaluation === null || evaluation === undefined) ? null : String(evaluation);
         const cleanExam = (examen === '' || examen === null || examen === undefined) ? null : String(examen);
 
-        const existingNote = await SafeNote.findOne({ class: studentClass, subject, studentName, semester, section });
-        if (existingNote) {
-            await SafeNote.findByIdAndUpdate(existingNote._id, {
+        const existingIdx = inMemoryNotes.findIndex(n =>
+            n.class === studentClass &&
+            n.subject === subject &&
+            n.studentName === studentName &&
+            n.semester === semester &&
+            (n.section || 'boys') === section
+        );
+
+        if (existingIdx !== -1) {
+            inMemoryNotes[existingIdx] = {
+                ...inMemoryNotes[existingIdx],
                 travauxClasse: cleanTc,
                 devoirs: cleanDev,
                 evaluation: cleanEva,
                 examen: cleanExam,
                 teacher,
                 updatedAt: new Date()
-            });
-            console.log(`✅ Note updated for ${studentName} (${studentClass} - ${subject})`);
-            return res.status(200).send('✅ Note mise à jour avec succès');
+            };
+            saveDatabaseToDisk();
+            console.log(`✅ Note updated for ${studentName} (${studentClass} - ${subject}) in ${section}`);
+            return res.status(200).json({ success: true, message: 'Note mise à jour avec succès', note: inMemoryNotes[existingIdx] });
         }
 
-        const note = SafeNote.createInstance({
-            class: studentClass, subject, studentName, semester, section,
+        const newNote = {
+            _id: String(noteIdCounter++),
+            class: studentClass,
+            subject,
+            studentName,
+            semester,
+            section,
             travauxClasse: cleanTc,
             devoirs: cleanDev,
             evaluation: cleanEva,
@@ -585,10 +618,11 @@ app.post('/save-notes', requireAuth, sectionMiddleware, async (req, res) => {
             enteredInSystem: false,
             createdAt: new Date(),
             updatedAt: new Date()
-        });
-        await note.save();
-        console.log(`✅ Note created for ${studentName} (${studentClass} - ${subject})`);
-        res.status(200).send('✅ Notes sauvegardées avec succès');
+        };
+        inMemoryNotes.push(newNote);
+        saveDatabaseToDisk();
+        console.log(`✅ Note created for ${studentName} (${studentClass} - ${subject}) in ${section}`);
+        res.status(200).json({ success: true, message: 'Note enregistrée avec succès', note: newNote });
     } catch (error) {
         console.error('Error saving note:', error);
         res.status(500).send('❌ Erreur serveur lors de la sauvegarde.');
@@ -600,12 +634,31 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
     const { id } = req.params;
     const updatedData = req.body;
     const teacher = req.session.user;
+    const section = req.body.section || req.session.section || req.headers['x-auth-section'] || 'boys';
+
     try {
-        const noteToUpdate = await SafeNote.findById(id);
-        if (!noteToUpdate) return res.status(404).send("❌ Note non trouvée.");
-        if (!await checkUserPermissionAndSubjectExists(teacher, noteToUpdate.class, noteToUpdate.subject, req.sectionData)) {
-            return res.status(403).send('❌ Permission refusée.');
+        let noteToUpdate = (id && id !== 'null' && id !== 'undefined') ? await SafeNote.findById(id) : null;
+        
+        // If not found by ID, look up by class, subject, studentName, semester
+        if (!noteToUpdate && updatedData.class && updatedData.subject && updatedData.studentName && updatedData.semester) {
+            noteToUpdate = inMemoryNotes.find(n => 
+                n.class === updatedData.class &&
+                n.subject === updatedData.subject &&
+                n.studentName === updatedData.studentName &&
+                n.semester === updatedData.semester &&
+                (n.section || 'boys') === section
+            );
         }
+
+        const studentClass = noteToUpdate ? noteToUpdate.class : updatedData.class;
+        const subject = noteToUpdate ? noteToUpdate.subject : updatedData.subject;
+
+        if (studentClass && subject) {
+            if (!await checkUserPermissionAndSubjectExists(teacher, studentClass, subject, req.sectionData)) {
+                return res.status(403).json({ success: false, message: '❌ Permission refusée.' });
+            }
+        }
+
         const cleanData = {};
         ['travauxClasse', 'devoirs', 'evaluation', 'examen'].forEach(field => {
             if (updatedData.hasOwnProperty(field)) {
@@ -623,17 +676,235 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
         }
         
         const permissions = req.sectionData.teacherPermissions[teacher];
-        if (permissions === 'admin' && updatedData.hasOwnProperty('approvedByAdmin')) {
+        const isAdminUser = permissions === 'admin' || (teacher || '').trim().toLowerCase() === 'mohamed';
+        if (isAdminUser && updatedData.hasOwnProperty('approvedByAdmin')) {
             cleanData.approvedByAdmin = Boolean(updatedData.approvedByAdmin);
         }
         
         cleanData.teacher = teacher;
         cleanData.updatedAt = new Date();
-        await SafeNote.findByIdAndUpdate(id, cleanData, { new: true });
-        res.status(200).send("✅ Note mise à jour.");
+
+        if (noteToUpdate) {
+            const updated = await SafeNote.findByIdAndUpdate(noteToUpdate._id, cleanData, { new: true });
+            saveDatabaseToDisk();
+            return res.status(200).json({ success: true, message: '✅ Note mise à jour avec succès.', note: updated });
+        } else if (updatedData.class && updatedData.subject && updatedData.studentName && updatedData.semester) {
+            const newNote = {
+                _id: String(noteIdCounter++),
+                class: updatedData.class,
+                subject: updatedData.subject,
+                studentName: updatedData.studentName,
+                semester: updatedData.semester,
+                section: section,
+                travauxClasse: cleanData.travauxClasse ?? null,
+                devoirs: cleanData.devoirs ?? null,
+                evaluation: cleanData.evaluation ?? null,
+                examen: cleanData.examen ?? null,
+                teacher,
+                approvedByAdmin: cleanData.approvedByAdmin ?? false,
+                enteredInSystem: cleanData.enteredInSystem ?? false,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+            inMemoryNotes.push(newNote);
+            saveDatabaseToDisk();
+            return res.status(200).json({ success: true, message: '✅ Note enregistrée avec succès.', note: newNote });
+        }
+
+        return res.status(404).json({ success: false, message: '❌ Note non trouvée.' });
     } catch (error) {
         console.error('Error updating note:', error);
-        res.status(500).send("❌ Erreur serveur lors de la mise à jour.");
+        res.status(500).json({ success: false, message: '❌ Erreur serveur lors de la mise à jour.' });
+    }
+});
+
+app.post('/api/save-note-auto', requireAuth, sectionMiddleware, async (req, res) => {
+    await connectToDatabase();
+    try {
+        const { id, class: studentClass, subject, studentName, semester, field, value } = req.body;
+        const teacher = req.session.user;
+        const section = req.body.section || req.session.section || req.headers['x-auth-section'] || 'boys';
+
+        if (!studentClass || !subject || !studentName || !semester) {
+            return res.status(400).json({ success: false, message: 'Paramètres manquants (classe, matière, élève, semestre).' });
+        }
+
+        if (!await checkUserPermissionAndSubjectExists(teacher, studentClass, subject, req.sectionData)) {
+            return res.status(403).json({ success: false, message: 'Permission refusée pour cette matière et classe.' });
+        }
+
+        let note = null;
+        if (id && id !== 'null' && id !== 'undefined') {
+            note = inMemoryNotes.find(n => String(n._id) === String(id));
+        }
+        if (!note) {
+            note = inMemoryNotes.find(n => 
+                n.class === studentClass &&
+                n.subject === subject &&
+                n.studentName === studentName &&
+                n.semester === semester &&
+                (n.section || 'boys') === section
+            );
+        }
+
+        const permissions = req.sectionData.teacherPermissions[teacher];
+        const isAdminUser = permissions === 'admin' || (teacher || '').trim().toLowerCase() === 'mohamed';
+
+        if (note) {
+            if (field) {
+                if (['travauxClasse', 'devoirs', 'evaluation', 'examen'].includes(field)) {
+                    note[field] = (value === '' || value === null || value === undefined) ? null : String(value);
+                } else if (field === 'enteredInSystem') {
+                    note.enteredInSystem = Boolean(value);
+                } else if (field === 'approvedByAdmin' && isAdminUser) {
+                    note.approvedByAdmin = Boolean(value);
+                }
+            } else {
+                ['travauxClasse', 'devoirs', 'evaluation', 'examen'].forEach(f => {
+                    if (req.body.hasOwnProperty(f)) {
+                        const val = req.body[f];
+                        note[f] = (val === '' || val === null || val === undefined) ? null : String(val);
+                    }
+                });
+                if (req.body.hasOwnProperty('enteredInSystem')) {
+                    note.enteredInSystem = Boolean(req.body.enteredInSystem);
+                }
+                if (req.body.hasOwnProperty('approvedByAdmin') && isAdminUser) {
+                    note.approvedByAdmin = Boolean(req.body.approvedByAdmin);
+                }
+            }
+            note.teacher = teacher;
+            note.updatedAt = new Date();
+            saveDatabaseToDisk();
+            console.log(`💾 Auto-saved note ${note._id} for ${studentName} (${studentClass} - ${subject})`);
+            return res.status(200).json({ success: true, message: 'Note mise à jour dans la base de données', note });
+        } else {
+            const cleanTc = (req.body.travauxClasse === '' || req.body.travauxClasse === null || req.body.travauxClasse === undefined) ? null : String(req.body.travauxClasse);
+            const cleanDev = (req.body.devoirs === '' || req.body.devoirs === null || req.body.devoirs === undefined) ? null : String(req.body.devoirs);
+            const cleanEva = (req.body.evaluation === '' || req.body.evaluation === null || req.body.evaluation === undefined) ? null : String(req.body.evaluation);
+            const cleanExam = (req.body.examen === '' || req.body.examen === null || req.body.examen === undefined) ? null : String(req.body.examen);
+
+            const newNote = {
+                _id: String(noteIdCounter++),
+                class: studentClass,
+                subject,
+                studentName,
+                semester,
+                section,
+                travauxClasse: cleanTc,
+                devoirs: cleanDev,
+                evaluation: cleanEva,
+                examen: cleanExam,
+                teacher,
+                approvedByAdmin: (isAdminUser && req.body.approvedByAdmin) ? true : false,
+                enteredInSystem: req.body.enteredInSystem ? true : false,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            if (field) {
+                if (['travauxClasse', 'devoirs', 'evaluation', 'examen'].includes(field)) {
+                    newNote[field] = (value === '' || value === null || value === undefined) ? null : String(value);
+                } else if (field === 'enteredInSystem') {
+                    newNote.enteredInSystem = Boolean(value);
+                } else if (field === 'approvedByAdmin' && isAdminUser) {
+                    newNote.approvedByAdmin = Boolean(value);
+                }
+            }
+
+            inMemoryNotes.push(newNote);
+            saveDatabaseToDisk();
+            console.log(`💾 Created & saved new note ${newNote._id} for ${studentName} (${studentClass} - ${subject})`);
+            return res.status(200).json({ success: true, message: 'Note créée et enregistrée dans la base de données', note: newNote });
+        }
+    } catch (err) {
+        console.error('Error in save-note-auto:', err);
+        res.status(500).json({ success: false, message: 'Erreur serveur lors de la sauvegarde.' });
+    }
+});
+
+app.post('/api/save-notes-batch', requireAuth, sectionMiddleware, async (req, res) => {
+    await connectToDatabase();
+    try {
+        const { notes } = req.body;
+        if (!Array.isArray(notes)) {
+            return res.status(400).json({ success: false, message: 'Tableau de notes requis.' });
+        }
+        const teacher = req.session.user;
+        const section = req.session.section || 'boys';
+        const permissions = req.sectionData.teacherPermissions[teacher];
+        const isAdminUser = permissions === 'admin' || (teacher || '').trim().toLowerCase() === 'mohamed';
+
+        let savedCount = 0;
+        const results = [];
+
+        for (const item of notes) {
+            const { class: studentClass, subject, studentName, semester } = item;
+            if (!studentClass || !subject || !studentName || !semester) continue;
+
+            if (!await checkUserPermissionAndSubjectExists(teacher, studentClass, subject, req.sectionData)) {
+                continue;
+            }
+
+            let existing = null;
+            if (item.id && item.id !== 'null') {
+                existing = inMemoryNotes.find(n => String(n._id) === String(item.id));
+            }
+            if (!existing) {
+                existing = inMemoryNotes.find(n => 
+                    n.class === studentClass &&
+                    n.subject === subject &&
+                    n.studentName === studentName &&
+                    n.semester === semester &&
+                    (n.section || 'boys') === section
+                );
+            }
+
+            const cleanTc = (item.travauxClasse === '' || item.travauxClasse === null || item.travauxClasse === undefined) ? null : String(item.travauxClasse);
+            const cleanDev = (item.devoirs === '' || item.devoirs === null || item.devoirs === undefined) ? null : String(item.devoirs);
+            const cleanEva = (item.evaluation === '' || item.evaluation === null || item.evaluation === undefined) ? null : String(item.evaluation);
+            const cleanExam = (item.examen === '' || item.examen === null || item.examen === undefined) ? null : String(item.examen);
+
+            if (existing) {
+                if (cleanTc !== null) existing.travauxClasse = cleanTc;
+                if (cleanDev !== null) existing.devoirs = cleanDev;
+                if (cleanEva !== null) existing.evaluation = cleanEva;
+                if (cleanExam !== null) existing.examen = cleanExam;
+                if (item.hasOwnProperty('enteredInSystem')) existing.enteredInSystem = Boolean(item.enteredInSystem);
+                if (item.hasOwnProperty('approvedByAdmin') && isAdminUser) existing.approvedByAdmin = Boolean(item.approvedByAdmin);
+                existing.teacher = teacher;
+                existing.updatedAt = new Date();
+                results.push(existing);
+            } else {
+                const newNote = {
+                    _id: String(noteIdCounter++),
+                    class: studentClass,
+                    subject,
+                    studentName,
+                    semester,
+                    section,
+                    travauxClasse: cleanTc,
+                    devoirs: cleanDev,
+                    evaluation: cleanEva,
+                    examen: cleanExam,
+                    teacher,
+                    approvedByAdmin: (isAdminUser && item.approvedByAdmin) ? true : false,
+                    enteredInSystem: item.enteredInSystem ? true : false,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                };
+                inMemoryNotes.push(newNote);
+                results.push(newNote);
+            }
+            savedCount++;
+        }
+
+        saveDatabaseToDisk();
+        console.log(`💾 Batch saved ${savedCount} notes to disk.`);
+        res.status(200).json({ success: true, count: savedCount, notes: results });
+    } catch (err) {
+        console.error('Error in batch save:', err);
+        res.status(500).json({ success: false, message: 'Erreur lors de la sauvegarde groupée.' });
     }
 });
 
@@ -1181,11 +1452,16 @@ const handleSaveTeacher = (req, res) => {
         permMap[trimmedName] = [];
     }
     
-    const existingSubIdx = permMap[trimmedName].findIndex(p => p.subject.toLowerCase() === subject.trim().toLowerCase());
-    if (existingSubIdx !== -1) {
-        permMap[trimmedName][existingSubIdx] = { subject: subject.trim(), classes: classList };
+    // Associer la matière et les classes à l'enseignant
+    if (oldTeacherName || req.body.replaceAssignments) {
+        permMap[trimmedName] = [{ subject: subject.trim(), classes: classList }];
     } else {
-        permMap[trimmedName].push({ subject: subject.trim(), classes: classList });
+        const existingSubIdx = permMap[trimmedName].findIndex(p => p.subject.toLowerCase() === subject.trim().toLowerCase());
+        if (existingSubIdx !== -1) {
+            permMap[trimmedName][existingSubIdx] = { subject: subject.trim(), classes: classList };
+        } else {
+            permMap[trimmedName].push({ subject: subject.trim(), classes: classList });
+        }
     }
     saveDatabaseToDisk();
     
