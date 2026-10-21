@@ -129,6 +129,112 @@ const ADMINS = {
     girls: ['Zohra', 'Mohamed']
 };
 
+function saveToLocalBackup(section) {
+    try {
+        const sec = section || currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+        const key = `al_kawthar_persistent_backup_${sec}`;
+        
+        let existingNotes = [];
+        let existingTeachers = [];
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed.notes)) existingNotes = parsed.notes;
+                if (Array.isArray(parsed.teachers)) existingTeachers = parsed.teachers;
+            }
+        } catch (e) {}
+
+        // Fusion intelligente des notes : ne jamais écraser une liste remplie par une liste vide !
+        let mergedNotes = existingNotes;
+        if (allNotesData && allNotesData.length > 0) {
+            const noteMap = new Map();
+            existingNotes.forEach(n => {
+                const k = `${n.class}_${n.subject}_${n.studentName}_${n.semester}`.toLowerCase();
+                noteMap.set(k, n);
+            });
+            allNotesData.forEach(n => {
+                const k = `${n.class}_${n.subject}_${n.studentName}_${n.semester}`.toLowerCase();
+                noteMap.set(k, n);
+            });
+            mergedNotes = Array.from(noteMap.values());
+        }
+
+        const teachersToSave = (adminTeachersCache && adminTeachersCache.length > 0) ? adminTeachersCache : existingTeachers;
+
+        const backupData = {
+            timestamp: Date.now(),
+            section: sec,
+            studentsByClass: studentsByClassGlobal,
+            teachers: teachersToSave,
+            notes: mergedNotes
+        };
+        localStorage.setItem(key, JSON.stringify(backupData));
+        console.log(`💾 Sauvegarde locale persistante mise à jour pour section: ${sec} (${mergedNotes.length} notes, ${Object.keys(studentsByClassGlobal || {}).length} classes)`);
+    } catch (e) {
+        console.warn('Erreur sauvegarde locale:', e);
+    }
+}
+
+async function checkAndAutoSyncWithLocalBackup(section) {
+    try {
+        const sec = section || 'boys';
+        const key = `al_kawthar_persistent_backup_${sec}`;
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
+        const backup = JSON.parse(raw);
+        if (!backup || !backup.studentsByClass) return;
+
+        const backupClasses = Object.keys(backup.studentsByClass || {});
+        const serverClasses = Object.keys(studentsByClassGlobal || {});
+
+        const hasCustomData = backupClasses.length > 0 && (
+            JSON.stringify(studentsByClassGlobal) !== JSON.stringify(backup.studentsByClass) ||
+            (backup.notes && backup.notes.length > 0 && allNotesData.length === 0) ||
+            (backup.teachers && backup.teachers.length > 0)
+        );
+
+        if (hasCustomData && isAdmin) {
+            console.log('🔄 Restauration automatique des données depuis le stockage persistant...');
+            const teacherPerms = {};
+            const allowedMap = {};
+            if (Array.isArray(backup.teachers)) {
+                backup.teachers.forEach(t => {
+                    if (t.name) {
+                        teacherPerms[t.name] = t.isAdmin ? 'admin' : (t.assignments || []);
+                        allowedMap[t.name] = t.password || t.name;
+                    }
+                });
+            }
+
+            const res = await fetch('/api/sync-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    section: sec,
+                    studentsByClass: backup.studentsByClass,
+                    teacherPermissions: Object.keys(teacherPerms).length > 0 ? teacherPerms : undefined,
+                    allowedTeachers: Object.keys(allowedMap).length > 0 ? allowedMap : undefined,
+                    notes: backup.notes || []
+                })
+            });
+
+            if (res.ok) {
+                const refreshed = await fetch('/get-user');
+                if (refreshed.ok) {
+                    const d = await refreshed.json();
+                    currentUserPermissions = d.permissions;
+                    subjectsByClassGlobal = d.subjectsByClass;
+                    studentsByClassGlobal = d.studentsByClass;
+                    populatePermissionBasedDropdowns();
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Auto-sync check error:', e);
+    }
+}
+
 async function refreshAppData() {
     try {
         const res = await fetch('/get-user');
@@ -138,6 +244,7 @@ async function refreshAppData() {
             subjectsByClassGlobal = data.subjectsByClass;
             studentsByClassGlobal = data.studentsByClass;
             populatePermissionBasedDropdowns();
+            saveToLocalBackup(data.section);
         }
     } catch (e) {
         console.error('Error refreshing app data:', e);
@@ -164,6 +271,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         currentUserData = data;
         usernameDisplay.textContent = data.username;
+        try {
+            localStorage.setItem('al_kawthar_user', data.username);
+            localStorage.setItem('al_kawthar_section', data.section);
+        } catch (e) {}
         
         // Vérifier si l'utilisateur est admin
         const userSection = data.section || 'boys';
@@ -196,6 +307,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         subjectsByClassGlobal = data.subjectsByClass;
         studentsByClassGlobal = data.studentsByClass;
         
+        // Synchronisation automatique intelligente avec la sauvegarde locale persistante
+        await checkAndAutoSyncWithLocalBackup(data.section);
+
         populatePermissionBasedDropdowns();
         setupEventListeners();
 
@@ -1459,6 +1573,8 @@ window.deleteNote = async function(noteId) {
         });
         
         if (response.ok) {
+            allNotesData = allNotesData.filter(n => String(n._id) !== String(noteId));
+            saveToLocalBackup();
             showFormMessage(formSuccessMessage, '✅ Note supprimée avec succès !', false);
             fetchAndDisplayData();
         } else {
@@ -2196,7 +2312,7 @@ function bindAdminControlsOnce() {
         };
     }
 
-    // Action : Enregistrer Enseignant
+    // Action : Enregistrer Enseignant (avec attributions multiples de matières et classes)
     const teacherForm = document.getElementById('adminTeacherForm');
     if (teacherForm) {
         teacherForm.onsubmit = async (e) => {
@@ -2204,11 +2320,25 @@ function bindAdminControlsOnce() {
             const oldTeacherName = document.getElementById('oldTeacherName').value.trim();
             const teacherName = document.getElementById('teacherName').value.trim();
             const teacherPassword = document.getElementById('teacherPassword').value.trim();
-            const teacherSubject = document.getElementById('teacherSubject').value.trim();
-            const teacherClasses = document.getElementById('teacherClasses').value.trim();
 
-            if (!teacherName || !teacherSubject || !teacherClasses) {
-                showAdminNotice('Veuillez remplir tous les champs obligatoires (*).', true);
+            if (!teacherName) {
+                showAdminNotice('Veuillez renseigner le login / identifiant de l\'enseignant.', true);
+                return;
+            }
+
+            const assignmentRows = document.querySelectorAll('.teacher-assignment-row');
+            const assignments = [];
+            assignmentRows.forEach(row => {
+                const subInput = row.querySelector('.assignment-subject-input');
+                const subject = subInput ? subInput.value.trim() : '';
+                const checkedBoxes = Array.from(row.querySelectorAll('.assignment-class-cb:checked')).map(cb => cb.value);
+                if (subject && checkedBoxes.length > 0) {
+                    assignments.push({ subject, classes: checkedBoxes });
+                }
+            });
+
+            if (assignments.length === 0) {
+                showAdminNotice('Veuillez associer au moins une matière et cocher au moins une classe pour cet enseignant.', true);
                 return;
             }
 
@@ -2220,8 +2350,7 @@ function bindAdminControlsOnce() {
                         oldTeacherName,
                         teacherName,
                         password: teacherPassword || teacherName,
-                        subject: teacherSubject,
-                        classes: teacherClasses
+                        assignments: assignments
                     })
                 });
                 const result = await res.json();
@@ -2231,12 +2360,127 @@ function bindAdminControlsOnce() {
                     panelAddTeacher.style.display = 'none';
                     await loadTeachersList();
                     await refreshAppData();
+                    saveToLocalBackup();
                 } else {
                     showAdminNotice(result.message, true);
                 }
             } catch (err) {
                 showAdminNotice('Erreur réseau lors de l\'enregistrement de l\'enseignant.', true);
             }
+        };
+    }
+
+    const addAssignmentRowBtn = document.getElementById('addAssignmentRowBtn');
+    if (addAssignmentRowBtn) {
+        addAssignmentRowBtn.onclick = () => renderAssignmentRow();
+    }
+
+    // Action : Vider les anciennes cohortes de démonstration (pour la rentrée)
+    const resetOldCohortBtn = document.getElementById('resetOldCohortBtn');
+    if (resetOldCohortBtn) {
+        resetOldCohortBtn.onclick = () => {
+            showSubdialogConfirm({
+                title: 'Rentrée scolaire : Vider les anciens élèves',
+                desc: 'Voulez-vous vider la liste des anciens élèves de l\'année passée ?<br><br><span style="color:var(--text-secondary);font-size:0.83rem;">Vos classes et matières actuelles seront conservées, mais les cohortes seront vidées pour vous permettre d\'inscrire directement vos nouveaux élèves.</span>',
+                actionText: 'Vider les anciens élèves',
+                onConfirm: async () => {
+                    try {
+                        const res = await fetch('/admin/reset-default-students', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ section: currentUserData?.section || 'boys' })
+                        });
+                        const result = await res.json();
+                        if (result.success) {
+                            showAdminNotice(result.message);
+                            saveToLocalBackup(currentUserData?.section || 'boys');
+                            await refreshAppData();
+                            populateAdminModalData();
+                            await fetchAndDisplayData();
+                        } else {
+                            showAdminNotice(result.message, true);
+                        }
+                    } catch (e) {
+                        showAdminNotice('Erreur réseau lors du nettoyage.', true);
+                    }
+                }
+            });
+        };
+    }
+
+    // Action : Exporter une sauvegarde JSON
+    const exportBackupBtn = document.getElementById('exportBackupBtn');
+    if (exportBackupBtn) {
+        exportBackupBtn.onclick = async () => {
+            try {
+                const res = await fetch('/api/full-export');
+                if (!res.ok) throw new Error('Erreur d\'export');
+                const data = await res.json();
+                const jsonStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const sec = currentUserData?.section || 'section';
+                const dateStr = new Date().toISOString().slice(0, 10);
+                a.href = url;
+                a.download = `Al_Kawthar_Sauvegarde_${sec}_${dateStr}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showAdminNotice('✅ Sauvegarde JSON téléchargée avec succès.');
+            } catch (e) {
+                showAdminNotice('Erreur lors de l\'export de la sauvegarde.', true);
+            }
+        };
+    }
+
+    // Action : Importer une sauvegarde JSON
+    const importBackupBtn = document.getElementById('importBackupBtn');
+    const importFileInput = document.getElementById('importBackupFileInput');
+    if (importBackupBtn && importFileInput) {
+        importBackupBtn.onclick = () => {
+            importFileInput.value = '';
+            importFileInput.click();
+        };
+
+        importFileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+                try {
+                    const parsed = JSON.parse(evt.target.result);
+                    if (!parsed.studentsByClass) {
+                        showAdminNotice('Fichier de sauvegarde invalide (données manquantes).', true);
+                        return;
+                    }
+                    const res = await fetch('/api/full-import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            section: sec,
+                            studentsByClass: parsed.studentsByClass,
+                            teacherPermissions: parsed.teacherPermissions,
+                            allowedTeachers: parsed.allowedTeachers,
+                            notes: parsed.notes || []
+                        })
+                    });
+                    const result = await res.json();
+                    if (result.success) {
+                        showAdminNotice('✅ Données restaurées et enregistrées avec succès !');
+                        saveToLocalBackup(sec);
+                        await refreshAppData();
+                        populateAdminModalData();
+                        await fetchAndDisplayData();
+                    } else {
+                        showAdminNotice(result.message || 'Erreur lors de la restauration.', true);
+                    }
+                } catch (err) {
+                    showAdminNotice('Erreur de lecture du fichier JSON.', true);
+                }
+            };
+            reader.readAsText(file);
         };
     }
 }
@@ -2653,9 +2897,8 @@ function renderFilteredTeachers() {
             <thead>
                 <tr>
                     <th>Enseignant</th>
-                    <th style="width: 220px;">Identifiants</th>
-                    <th>Matière(s) Enseignée(s)</th>
-                    <th>Classes Assignées</th>
+                    <th style="width: 200px;">Identifiants</th>
+                    <th>Matières &amp; Classes Associées (Attributions Précises)</th>
                     <th style="width: 170px; text-align: right;">Actions</th>
                 </tr>
             </thead>
@@ -2667,20 +2910,32 @@ function renderFilteredTeachers() {
         const roleClass = t.isAdmin ? 'admin-role' : '';
         const safeTeacherJson = JSON.stringify(t).replace(/'/g, "&#39;");
 
-        // Formatage des matières
-        let subjectsHtml = '';
-        let classesHtml = '';
+        // Formatage des attributions matières/classes
+        let assignmentsHtml = '';
 
         if (t.isAdmin) {
-            subjectsHtml = '<span class="admin-badge admin-badge-subject"><i class="fas fa-unlock-alt"></i> Toutes matières</span>';
-            classesHtml = '<span class="admin-badge admin-badge-class">Toutes classes</span>';
+            assignmentsHtml = '<span class="admin-badge admin-badge-admin" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;"><i class="fas fa-unlock-alt"></i> Administrateur complet (toutes matières &amp; toutes classes)</span>';
         } else if (t.assignments && t.assignments.length > 0) {
-            subjectsHtml = t.assignments.map(a => `<span class="admin-badge admin-badge-subject">${a.subject}</span>`).join(' ');
-            const allClasses = [...new Set(t.assignments.flatMap(a => a.classes || []))].sort();
-            classesHtml = allClasses.map(c => `<span class="admin-badge admin-badge-class">${c}</span>`).join(' ') || '<span style="color:var(--text-muted); font-size:0.75rem;">Aucune</span>';
+            assignmentsHtml = `
+                <div style="display: flex; flex-direction: column; gap: 0.45rem;">
+                    ${t.assignments.map(a => `
+                        <div style="display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; flex-wrap: wrap; background: var(--surface-2); padding: 0.35rem 0.65rem; border-radius: 8px; border: 1px solid var(--border);">
+                            <span class="admin-badge admin-badge-subject" style="font-weight: 700; display: inline-flex; align-items: center; gap: 0.3rem;">
+                                <i class="fas fa-book-reader"></i>
+                                <span>${a.subject}</span>
+                            </span>
+                            <span style="color: var(--text-muted); font-size: 0.75rem; font-weight: 600;">enseigné en :</span>
+                            <div style="display: inline-flex; flex-wrap: wrap; gap: 0.25rem;">
+                                ${(a.classes && a.classes.length > 0)
+                                    ? a.classes.map(c => `<span class="admin-badge admin-badge-class">${c}</span>`).join('')
+                                    : '<span style="color:var(--text-muted); font-size:0.75rem;">(Aucune classe)</span>'}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
         } else {
-            subjectsHtml = '<span style="color:var(--text-muted); font-size:0.75rem;">Non assignée</span>';
-            classesHtml = '<span style="color:var(--text-muted); font-size:0.75rem;">Aucune</span>';
+            assignmentsHtml = '<span style="color:var(--text-muted); font-size:0.78rem;">Aucune matière associée pour le moment</span>';
         }
 
         tableHtml += `
@@ -2709,14 +2964,7 @@ function renderFilteredTeachers() {
                     </div>
                 </td>
                 <td>
-                    <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;">
-                        ${subjectsHtml}
-                    </div>
-                </td>
-                <td>
-                    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
-                        ${classesHtml}
-                    </div>
+                    ${assignmentsHtml}
                 </td>
                 <td style="text-align: right;">
                     <div style="display: inline-flex; gap: 0.35rem; justify-content: flex-end;">
@@ -2742,6 +2990,106 @@ function renderFilteredTeachers() {
     container.appendChild(tableWrapper);
 }
 
+// Générateur d'une ligne d'attribution matière / classes
+function renderAssignmentRow(assignment = null) {
+    const container = document.getElementById('teacherAssignmentsContainer');
+    if (!container) return;
+
+    const row = document.createElement('div');
+    row.className = 'teacher-assignment-row';
+    row.style.background = '#FFFFFF';
+    row.style.border = '1px solid var(--border)';
+    row.style.borderRadius = '10px';
+    row.style.padding = '0.85rem';
+    row.style.display = 'flex';
+    row.style.flexDirection = 'column';
+    row.style.gap = '0.6rem';
+    row.style.boxShadow = 'var(--shadow-xs)';
+
+    const currentSub = assignment?.subject || '';
+    const assignedClasses = Array.isArray(assignment?.classes) ? assignment.classes : [];
+
+    // Classes actuellement disponibles dans l'établissement
+    const availableClasses = Object.keys(studentsByClassGlobal || {}).sort();
+    if (availableClasses.length === 0) {
+        availableClasses.push('PEI1', 'PEI2', 'PEI3', 'PEI4', 'PEI5', 'DP1', 'DP2');
+    }
+
+    const suggestedSubjects = [
+        'Maths', 'Français', 'L.L', 'Anglais', 'Histoire-Géo', 'I.S',
+        'Physique-Chimie', 'Biologie', 'Sciences', 'Design', 'ART',
+        'Musique', 'P.E', 'S.E.S', 'E.S'
+    ];
+
+    let classCheckboxesHtml = '';
+    availableClasses.forEach(cls => {
+        const isChecked = assignedClasses.includes(cls) ? 'checked' : '';
+        classCheckboxesHtml += `
+            <label style="display: inline-flex; align-items: center; gap: 0.35rem; background: var(--surface-2); border: 1px solid var(--border); padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; user-select: none;">
+                <input type="checkbox" class="assignment-class-cb" value="${cls}" ${isChecked} style="cursor: pointer;">
+                <span>${cls}</span>
+            </label>
+        `;
+    });
+
+    row.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.6rem;">
+            <div style="flex: 1; display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); white-space: nowrap;">
+                    <i class="fas fa-book" style="color: var(--primary);"></i> Matière :
+                </span>
+                <input type="text" class="modern-input assignment-subject-input" value="${currentSub}" placeholder="ex: Mathématiques, Musique, ART..." required list="subjectDatalist" style="flex: 1; padding: 0.4rem 0.75rem; font-size: 0.85rem;">
+                <datalist id="subjectDatalist">
+                    ${suggestedSubjects.map(s => `<option value="${s}">`).join('')}
+                </datalist>
+            </div>
+            <button type="button" class="admin-action-btn admin-action-delete remove-assignment-btn" title="Supprimer cette attribution" style="padding: 0.35rem 0.65rem;">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+        <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span style="font-size: 0.74rem; font-weight: 700; color: var(--text-secondary);">
+                    Classes où cette matière est enseignée par ce professeur :
+                </span>
+                <div style="display: flex; gap: 0.35rem;">
+                    <button type="button" class="select-all-classes-btn" style="background: none; border: none; color: var(--primary); font-size: 0.72rem; font-weight: 700; cursor: pointer; text-decoration: underline;">
+                        Toutes
+                    </button>
+                    <span style="color: var(--border);">|</span>
+                    <button type="button" class="deselect-all-classes-btn" style="background: none; border: none; color: var(--text-muted); font-size: 0.72rem; font-weight: 600; cursor: pointer;">
+                        Aucune
+                    </button>
+                </div>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+                ${classCheckboxesHtml}
+            </div>
+        </div>
+    `;
+
+    // Gestion suppression de ligne
+    row.querySelector('.remove-assignment-btn').onclick = () => {
+        const totalRows = container.querySelectorAll('.teacher-assignment-row').length;
+        if (totalRows <= 1) {
+            row.querySelector('.assignment-subject-input').value = '';
+            row.querySelectorAll('.assignment-class-cb').forEach(cb => cb.checked = false);
+        } else {
+            row.remove();
+        }
+    };
+
+    row.querySelector('.select-all-classes-btn').onclick = () => {
+        row.querySelectorAll('.assignment-class-cb').forEach(cb => cb.checked = true);
+    };
+
+    row.querySelector('.deselect-all-classes-btn').onclick = () => {
+        row.querySelectorAll('.assignment-class-cb').forEach(cb => cb.checked = false);
+    };
+
+    container.appendChild(row);
+}
+
 function populateTeacherForEdit(teacher) {
     const panel = document.getElementById('panelAddTeacher');
     if (panel) panel.style.display = 'block';
@@ -2750,12 +3098,14 @@ function populateTeacherForEdit(teacher) {
     document.getElementById('teacherName').value = teacher.name;
     document.getElementById('teacherPassword').value = teacher.password || '';
 
-    if (teacher.assignments && teacher.assignments.length > 0) {
-        document.getElementById('teacherSubject').value = teacher.assignments[0].subject || '';
-        document.getElementById('teacherClasses').value = (teacher.assignments[0].classes || []).join(', ');
-    } else {
-        document.getElementById('teacherSubject').value = '';
-        document.getElementById('teacherClasses').value = '';
+    const container = document.getElementById('teacherAssignmentsContainer');
+    if (container) {
+        container.innerHTML = '';
+        if (teacher.assignments && teacher.assignments.length > 0) {
+            teacher.assignments.forEach(a => renderAssignmentRow(a));
+        } else {
+            renderAssignmentRow();
+        }
     }
 
     const header = document.getElementById('teacherFormHeader');
@@ -2778,6 +3128,12 @@ function populateTeacherForEdit(teacher) {
 function resetTeacherForm() {
     document.getElementById('oldTeacherName').value = '';
     document.getElementById('adminTeacherForm')?.reset();
+
+    const container = document.getElementById('teacherAssignmentsContainer');
+    if (container) {
+        container.innerHTML = '';
+        renderAssignmentRow();
+    }
 
     const header = document.getElementById('teacherFormHeader');
     if (header) {

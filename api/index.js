@@ -286,25 +286,45 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+function isUserAdmin(username, sectionData) {
+    if (!username) return false;
+    const clean = String(username).trim().toLowerCase();
+    if (clean === 'mohamed' || clean === 'zohra') return true;
+    const perms = sectionData?.teacherPermissions || {};
+    const foundKey = Object.keys(perms).find(k => k.toLowerCase() === clean);
+    if (foundKey && perms[foundKey] === 'admin') return true;
+    return false;
+}
+
+function getTeacherPermissionsForUser(username, sectionData) {
+    if (!username) return null;
+    const clean = String(username).trim().toLowerCase();
+    if (clean === 'mohamed' || clean === 'zohra') return 'admin';
+    const perms = sectionData?.teacherPermissions || {};
+    const foundKey = Object.keys(perms).find(k => k.toLowerCase() === clean);
+    return foundKey ? perms[foundKey] : (perms[username] || null);
+}
+
 // Fonctions de gestion des sections
 function getSectionData(section = 'boys') {
-    const sec = section === 'girls' ? 'girls' : 'boys';
+    const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
     const storeSec = dbStorage[sec] || {};
     
     const fallbackAllowed = sec === 'girls' ? allowedTeachersGirls : allowedTeachersBoys;
     const fallbackPerms = sec === 'girls' ? teacherPermissionsGirls : teacherPermissionsBoys;
     const fallbackStudents = sec === 'girls' ? studentsByClassGirls : studentsByClassBoys;
 
-    const allowedTeachers = {
-        ...(fallbackAllowed || {}),
-        ...(storeSec.allowedTeachers || {})
-    };
-    const teacherPermissions = JSON.parse(JSON.stringify(storeSec.teacherPermissions || fallbackPerms || {}));
-    const studentsByClass = JSON.parse(JSON.stringify(storeSec.studentsByClass || fallbackStudents || {}));
+    const allowedTeachers = storeSec.allowedTeachers ? storeSec.allowedTeachers : JSON.parse(JSON.stringify(fallbackAllowed || {}));
+    const teacherPermissions = storeSec.teacherPermissions ? storeSec.teacherPermissions : JSON.parse(JSON.stringify(fallbackPerms || {}));
+    const studentsByClass = storeSec.studentsByClass ? storeSec.studentsByClass : JSON.parse(JSON.stringify(fallbackStudents || {}));
 
     // Toujours garantir le mot de passe admin Mohamed
     allowedTeachers["Mohamed"] = "Med120786";
     teacherPermissions["Mohamed"] = "admin";
+    if (sec === 'girls') {
+        allowedTeachers["Zohra"] = "Zohra";
+        teacherPermissions["Zohra"] = "admin";
+    }
 
     const subjectsByClass = buildSubjectsByClass(teacherPermissions, studentsByClass);
     const allClasses = [...new Set([...Object.keys(studentsByClass), ...Object.keys(subjectsByClass)])].sort();
@@ -381,17 +401,20 @@ function getAssignedTeacher(subject, className, teacherPermissions) {
 }
 
 function getUserAllowedOptions(username, sectionData) {
-    const permissions = sectionData.teacherPermissions[username];
+    if (isUserAdmin(username, sectionData)) {
+        return { classes: [...sectionData.allClasses], subjects: [...sectionData.allSubjects] };
+    }
+    const permissions = getTeacherPermissionsForUser(username, sectionData);
     if (permissions === 'admin') {
         return { classes: [...sectionData.allClasses], subjects: [...sectionData.allSubjects] };
     }
-    if (!permissions) return { classes: [], subjects: [] };
+    if (!permissions || !Array.isArray(permissions)) return { classes: [], subjects: [] };
 
     let allowedClasses = new Set();
     let allowedSubjects = new Set();
     permissions.forEach(perm => {
-        allowedSubjects.add(perm.subject);
-        perm.classes.forEach(cls => allowedClasses.add(cls));
+        if (perm.subject) allowedSubjects.add(perm.subject);
+        if (Array.isArray(perm.classes)) perm.classes.forEach(cls => allowedClasses.add(cls));
     });
     return {
         classes: Array.from(allowedClasses).sort(),
@@ -401,7 +424,11 @@ function getUserAllowedOptions(username, sectionData) {
 
 function buildMongoQueryForUser(username, semester, teacherPermissions) {
     const baseQuery = { semester: semester };
-    const permissions = teacherPermissions[username];
+    if (!username) return baseQuery;
+    const cleanUser = String(username).trim().toLowerCase();
+    if (cleanUser === 'mohamed' || cleanUser === 'zohra') return baseQuery;
+    const foundKey = Object.keys(teacherPermissions || {}).find(k => k.toLowerCase() === cleanUser);
+    const permissions = foundKey ? teacherPermissions[foundKey] : teacherPermissions[username];
     if (!permissions || permissions === 'admin') {
         return baseQuery;
     }
@@ -416,9 +443,9 @@ function buildMongoQueryForUser(username, semester, teacherPermissions) {
 
 async function checkUserPermissionAndSubjectExists(username, classToCheck, subjectToCheck, sectionData) {
     if (!username) return false;
-    const cleanUser = String(username).trim().toLowerCase();
-    const permissions = sectionData?.teacherPermissions?.[username] || sectionData?.teacherPermissions?.[Object.keys(sectionData?.teacherPermissions || {}).find(k => k.toLowerCase() === cleanUser)];
-    if (permissions === 'admin' || cleanUser === 'mohamed' || cleanUser === 'zohra') return true;
+    if (isUserAdmin(username, sectionData)) return true;
+    const permissions = getTeacherPermissionsForUser(username, sectionData);
+    if (permissions === 'admin') return true;
     if (!permissions || !Array.isArray(permissions)) return false;
     const cleanSub = String(subjectToCheck || '').trim().toLowerCase();
     const cleanCls = String(classToCheck || '').trim().toLowerCase();
@@ -537,8 +564,8 @@ app.get('/all-notes', requireAuth, sectionMiddleware, async (req, res) => {
         return res.status(400).json({ error: 'Le paramètre semester (S1 ou S2) est requis.' });
     }
     try {
-        const permissions = req.sectionData.teacherPermissions[username];
-        const isAdminUser = permissions === 'admin';
+        const permissions = getTeacherPermissionsForUser(username, req.sectionData);
+        const isAdminUser = isUserAdmin(username, req.sectionData);
 
         const filtered = inMemoryNotes.filter(n => {
             if (n.semester !== semester) return false;
@@ -547,8 +574,8 @@ app.get('/all-notes', requireAuth, sectionMiddleware, async (req, res) => {
 
             if (!isAdminUser && Array.isArray(permissions)) {
                 const canView = permissions.some(p =>
-                    p.subject.toLowerCase() === (n.subject || '').toLowerCase() &&
-                    Array.isArray(p.classes) && p.classes.includes(n.class)
+                    (p.subject || '').trim().toLowerCase() === (n.subject || '').trim().toLowerCase() &&
+                    Array.isArray(p.classes) && p.classes.some(c => (c || '').trim().toLowerCase() === (n.class || '').trim().toLowerCase())
                 );
                 if (!canView) return false;
             }
@@ -675,8 +702,8 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
             cleanData.enteredInSystem = Boolean(updatedData.enteredInSystem);
         }
         
-        const permissions = req.sectionData.teacherPermissions[teacher];
-        const isAdminUser = permissions === 'admin' || (teacher || '').trim().toLowerCase() === 'mohamed';
+        const permissions = getTeacherPermissionsForUser(teacher, req.sectionData);
+        const isAdminUser = isUserAdmin(teacher, req.sectionData);
         if (isAdminUser && updatedData.hasOwnProperty('approvedByAdmin')) {
             cleanData.approvedByAdmin = Boolean(updatedData.approvedByAdmin);
         }
@@ -740,15 +767,15 @@ app.post('/api/save-note-auto', requireAuth, sectionMiddleware, async (req, res)
         if (!note) {
             note = inMemoryNotes.find(n => 
                 n.class === studentClass &&
-                n.subject === subject &&
-                n.studentName === studentName &&
+                String(n.subject || '').trim().toLowerCase() === String(subject || '').trim().toLowerCase() &&
+                String(n.studentName || '').trim().toLowerCase() === String(studentName || '').trim().toLowerCase() &&
                 n.semester === semester &&
                 (n.section || 'boys') === section
             );
         }
 
-        const permissions = req.sectionData.teacherPermissions[teacher];
-        const isAdminUser = permissions === 'admin' || (teacher || '').trim().toLowerCase() === 'mohamed';
+        const permissions = getTeacherPermissionsForUser(teacher, req.sectionData);
+        const isAdminUser = isUserAdmin(teacher, req.sectionData);
 
         if (note) {
             if (field) {
@@ -831,9 +858,9 @@ app.post('/api/save-notes-batch', requireAuth, sectionMiddleware, async (req, re
             return res.status(400).json({ success: false, message: 'Tableau de notes requis.' });
         }
         const teacher = req.session.user;
-        const section = req.session.section || 'boys';
-        const permissions = req.sectionData.teacherPermissions[teacher];
-        const isAdminUser = permissions === 'admin' || (teacher || '').trim().toLowerCase() === 'mohamed';
+        const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+        const permissions = getTeacherPermissionsForUser(teacher, req.sectionData);
+        const isAdminUser = isUserAdmin(teacher, req.sectionData);
 
         let savedCount = 0;
         const results = [];
@@ -1253,8 +1280,7 @@ function getAdminSectionMaps(section) {
 
 app.post('/admin/add-class', requireAuth, sectionMiddleware, (req, res) => {
     const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(teacher, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className } = req.body;
@@ -1272,8 +1298,7 @@ app.post('/admin/add-class', requireAuth, sectionMiddleware, (req, res) => {
 
 app.post('/admin/update-class', requireAuth, sectionMiddleware, (req, res) => {
     const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(teacher, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { oldClassName, newClassName } = req.body;
@@ -1315,8 +1340,7 @@ app.post('/admin/update-class', requireAuth, sectionMiddleware, (req, res) => {
 
 app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
     const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(teacher, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className } = req.body;
@@ -1344,8 +1368,7 @@ app.post('/admin/delete-class', requireAuth, sectionMiddleware, (req, res) => {
 
 app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
     const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(teacher, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className, studentName } = req.body;
@@ -1368,8 +1391,7 @@ app.post('/admin/add-student', requireAuth, sectionMiddleware, (req, res) => {
 
 app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => {
     const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(teacher, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className, oldName, newName, targetClass } = req.body;
@@ -1417,8 +1439,7 @@ app.post('/admin/update-student', requireAuth, sectionMiddleware, (req, res) => 
 
 app.post('/admin/delete-student', requireAuth, sectionMiddleware, (req, res) => {
     const teacher = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[teacher];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(teacher, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { className, studentName } = req.body;
@@ -1433,8 +1454,7 @@ app.post('/admin/delete-student', requireAuth, sectionMiddleware, (req, res) => 
 
 const handleSaveTeacher = (req, res) => {
     const adminUser = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[adminUser];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(adminUser, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { oldTeacherName, teacherName, password, subject, classes, assignments } = req.body;
@@ -1489,8 +1509,7 @@ app.post('/admin/save-teacher', requireAuth, sectionMiddleware, handleSaveTeache
 
 app.post('/admin/delete-teacher', requireAuth, sectionMiddleware, (req, res) => {
     const user = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[user];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(user, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
     const { teacherName } = req.body;
@@ -1512,11 +1531,10 @@ app.post('/admin/delete-teacher', requireAuth, sectionMiddleware, (req, res) => 
 
 app.get('/admin/get-teachers', requireAuth, sectionMiddleware, (req, res) => {
     const user = req.session.user;
-    const permissions = req.sectionData.teacherPermissions[user];
-    if (permissions !== 'admin') {
+    if (!isUserAdmin(user, req.sectionData)) {
         return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
     }
-    const section = req.session.section || 'boys';
+    const section = req.session?.section || req.headers['x-auth-section'] || 'boys';
     const { permMap, allowedMap } = getAdminSectionMaps(section);
     
     const list = Object.entries(permMap).map(([name, perms]) => ({
@@ -1527,6 +1545,122 @@ app.get('/admin/get-teachers', requireAuth, sectionMiddleware, (req, res) => {
     }));
 
     res.json({ success: true, teachers: list });
+});
+
+// Endpoint de synchronisation client-serveur bidirectionnelle
+app.post('/api/sync-data', requireAuth, sectionMiddleware, (req, res) => {
+    const user = req.session.user;
+    if (!isUserAdmin(user, req.sectionData)) {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { section, studentsByClass, teacherPermissions, allowedTeachers, notes } = req.body;
+    const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
+    if (!dbStorage[sec]) dbStorage[sec] = {};
+    if (studentsByClass && typeof studentsByClass === 'object') {
+        dbStorage[sec].studentsByClass = studentsByClass;
+    }
+    if (teacherPermissions && typeof teacherPermissions === 'object') {
+        dbStorage[sec].teacherPermissions = teacherPermissions;
+        dbStorage[sec].teacherPermissions["Mohamed"] = "admin";
+        if (sec === 'girls') dbStorage[sec].teacherPermissions["Zohra"] = "admin";
+    }
+    if (allowedTeachers && typeof allowedTeachers === 'object') {
+        dbStorage[sec].allowedTeachers = { ...(dbStorage[sec].allowedTeachers || {}), ...allowedTeachers };
+        dbStorage[sec].allowedTeachers["Mohamed"] = "Med120786";
+        if (sec === 'girls') dbStorage[sec].allowedTeachers["Zohra"] = "Zohra";
+    }
+    if (Array.isArray(notes)) {
+        notes.forEach(incoming => {
+            if (!incoming.class || !incoming.subject || !incoming.studentName) return;
+            const idx = inMemoryNotes.findIndex(n => 
+                n.class === incoming.class &&
+                String(n.subject || '').trim().toLowerCase() === String(incoming.subject || '').trim().toLowerCase() &&
+                String(n.studentName || '').trim().toLowerCase() === String(incoming.studentName || '').trim().toLowerCase() &&
+                n.semester === incoming.semester &&
+                (n.section || 'boys') === (incoming.section || sec)
+            );
+            if (idx !== -1) {
+                inMemoryNotes[idx] = { ...inMemoryNotes[idx], ...incoming, updatedAt: new Date() };
+            } else {
+                inMemoryNotes.push({ ...incoming, _id: incoming._id || String(noteIdCounter++) });
+            }
+        });
+    }
+    saveDatabaseToDisk();
+    console.log(`✅ Base de données synchronisée et sauvegardée pour la section: ${sec}`);
+    res.json({ success: true, message: 'Données synchronisées et persistées avec succès.' });
+});
+
+// Endpoint pour vider les cohortes de l'année précédente
+app.post('/admin/reset-default-students', requireAuth, sectionMiddleware, (req, res) => {
+    const user = req.session.user;
+    if (!isUserAdmin(user, req.sectionData)) {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
+    if (!dbStorage[sec]) dbStorage[sec] = {};
+    
+    const classes = Object.keys(dbStorage[sec].studentsByClass || {});
+    const cleared = {};
+    classes.forEach(c => { cleared[c] = []; });
+    dbStorage[sec].studentsByClass = cleared;
+    
+    inMemoryNotes = inMemoryNotes.filter(n => (n.section || 'boys') !== sec);
+    saveDatabaseToDisk();
+    res.json({ success: true, message: `Les anciens élèves de l'année passée ont été retirés. Vos classes sont prêtes pour inscrire la nouvelle cohorte.` });
+});
+
+// Endpoint pour exporter toutes les données au format JSON
+app.get('/api/full-export', requireAuth, sectionMiddleware, (req, res) => {
+    const user = req.session.user;
+    if (!isUserAdmin(user, req.sectionData)) {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const section = req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
+    const sectionNotes = inMemoryNotes.filter(n => (n.section || 'boys') === sec);
+    res.json({
+        section: sec,
+        exportedAt: new Date().toISOString(),
+        studentsByClass: dbStorage[sec]?.studentsByClass || {},
+        teacherPermissions: dbStorage[sec]?.teacherPermissions || {},
+        allowedTeachers: dbStorage[sec]?.allowedTeachers || {},
+        notes: sectionNotes
+    });
+});
+
+// Endpoint pour importer et restaurer une sauvegarde JSON complète
+app.post('/api/full-import', requireAuth, sectionMiddleware, (req, res) => {
+    const user = req.session.user;
+    if (!isUserAdmin(user, req.sectionData)) {
+        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
+    }
+    const { section, studentsByClass, teacherPermissions, allowedTeachers, notes } = req.body;
+    const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
+    if (!dbStorage[sec]) dbStorage[sec] = {};
+
+    if (studentsByClass && typeof studentsByClass === 'object') {
+        dbStorage[sec].studentsByClass = studentsByClass;
+    }
+    if (teacherPermissions && typeof teacherPermissions === 'object') {
+        dbStorage[sec].teacherPermissions = teacherPermissions;
+        dbStorage[sec].teacherPermissions["Mohamed"] = "admin";
+        if (sec === 'girls') dbStorage[sec].teacherPermissions["Zohra"] = "admin";
+    }
+    if (allowedTeachers && typeof allowedTeachers === 'object') {
+        dbStorage[sec].allowedTeachers = { ...(dbStorage[sec].allowedTeachers || {}), ...allowedTeachers };
+        dbStorage[sec].allowedTeachers["Mohamed"] = "Med120786";
+        if (sec === 'girls') dbStorage[sec].allowedTeachers["Zohra"] = "Zohra";
+    }
+    if (Array.isArray(notes)) {
+        inMemoryNotes = inMemoryNotes.filter(n => (n.section || 'boys') !== sec);
+        notes.forEach(incoming => {
+            inMemoryNotes.push({ ...incoming, _id: incoming._id || String(noteIdCounter++), section: sec });
+        });
+    }
+    saveDatabaseToDisk();
+    res.json({ success: true, message: 'Sauvegarde importée et base de données mise à jour avec succès !' });
 });
 
 // Route universelle HTML & PDF (A4) accessible en GET et POST

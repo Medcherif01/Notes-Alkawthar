@@ -347,7 +347,7 @@
                                 <option value="ALL">Afficher toutes les classes</option>
                             </select>
                         </div>
-                        <div style="display: flex; gap: 0.5rem;">
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                             <button type="button" id="toggleAddClassBtn" class="admin-btn admin-btn-secondary">
                                 <i class="fas fa-folder-plus"></i>
                                 <span>Nouvelle Classe</span>
@@ -356,6 +356,19 @@
                                 <i class="fas fa-user-plus"></i>
                                 <span>Inscrire un Élève</span>
                             </button>
+                            <button type="button" id="resetOldCohortBtn" class="admin-btn admin-btn-secondary" style="border-color:#F59E0B;color:#D97706;" title="Vider les anciens élèves pour la nouvelle année">
+                                <i class="fas fa-broom"></i>
+                                <span>Nouvelle Année (Vider Anciens)</span>
+                            </button>
+                            <button type="button" id="exportBackupBtn" class="admin-btn admin-btn-secondary" title="Exporter toutes les données actuelles au format JSON">
+                                <i class="fas fa-download"></i>
+                                <span>Sauvegarde JSON</span>
+                            </button>
+                            <button type="button" id="importBackupBtn" class="admin-btn admin-btn-secondary" title="Restaurer des données depuis un fichier JSON">
+                                <i class="fas fa-upload"></i>
+                                <span>Restaurer JSON</span>
+                            </button>
+                            <input type="file" id="importBackupFileInput" accept=".json" style="display: none;">
                         </div>
                     </div>
 
@@ -444,18 +457,25 @@
                                 </div>
                             </div>
 
-                            <div style="display: grid; grid-template-columns: 1fr 1.3fr; gap: 0.85rem;">
-                                <div>
-                                    <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.25rem;">
-                                        Matière enseignée <span style="color: var(--danger);">*</span>
-                                    </label>
-                                    <input type="text" id="teacherSubject" placeholder="ex: Mathématiques" required class="modern-input" style="width: 100%;">
+                            <!-- Association dynamique matières & classes précises -->
+                            <div style="background: var(--surface-2); border-radius: var(--radius-md); padding: 1rem; border: 1px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem;">
+                                    <div>
+                                        <div style="font-size: 0.84rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 0.4rem;">
+                                            <i class="fas fa-layer-group" style="color: var(--primary);"></i>
+                                            <span>Matière(s) et Classe(s) Précises Assignées</span>
+                                            <span style="color: var(--danger); font-size: 0.8rem;">*</span>
+                                        </div>
+                                        <div style="font-size: 0.73rem; color: var(--text-secondary); margin-top: 2px;">
+                                            Chaque association lie une matière précise aux classes où cet enseignant intervient (ex: Maths en PEI1, PEI2 et Physique en PEI4).
+                                        </div>
+                                    </div>
+                                    <button type="button" id="addAssignmentRowBtn" class="admin-btn admin-btn-secondary" style="font-size: 0.75rem; padding: 0.4rem 0.8rem;">
+                                        <i class="fas fa-plus"></i> + Associer une autre matière
+                                    </button>
                                 </div>
-                                <div>
-                                    <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.25rem;">
-                                        Classes assignées (séparées par des virgules) <span style="color: var(--danger);">*</span>
-                                    </label>
-                                    <input type="text" id="teacherClasses" placeholder="ex: PEI1, PEI2, PEI3" required class="modern-input" style="width: 100%;">
+                                <div id="teacherAssignmentsContainer" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                    <!-- Lignes d'association générées dynamiquement par le script -->
                                 </div>
                             </div>
 

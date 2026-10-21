@@ -2,7 +2,6 @@
   "boys": {
     "studentsByClass": {
       "PEI1": [
-        "Bilal Molina",
         "Faysal Achar",
         "Jad Mahayni",
         "Manaf Kotbi"
@@ -179,6 +178,21 @@
             "DP2"
           ]
         }
+      ],
+      "Prof Martin": [
+        {
+          "subject": "Maths",
+          "classes": [
+            "PEI1",
+            "PEI2"
+          ]
+        },
+        {
+          "subject": "Physique-Chimie",
+          "classes": [
+            "PEI4"
+          ]
+        }
       ]
     },
     "allowedTeachers": {
@@ -190,7 +204,8 @@
       "Zine": "Zine",
       "Youssif": "Youssif",
       "Tonga": "Tonga",
-      "Kamel": "Kamel"
+      "Kamel": "Kamel",
+      "Prof Martin": "pass123"
     }
   },
   "girls": {
@@ -477,5 +492,23 @@
       "Tayba": "Tayba"
     }
   },
-  "notes": []
+  "notes": [
+    {
+      "_id": "1",
+      "class": "PEI1",
+      "subject": "Maths",
+      "studentName": "Faysal Achar",
+      "semester": "S1",
+      "section": "boys",
+      "travauxClasse": "19",
+      "devoirs": null,
+      "evaluation": null,
+      "examen": null,
+      "teacher": "Prof Martin",
+      "approvedByAdmin": false,
+      "enteredInSystem": false,
+      "createdAt": "2026-10-21T06:52:39.852Z",
+      "updatedAt": "2026-10-21T07:00:40.514Z"
+    }
+  ]
 }
