@@ -546,12 +546,179 @@ function requireAuth(req, res, next) {
 app.get('/get-user', requireAuth, sectionMiddleware, (req, res) => {
     const username = req.session.user;
     const section = req.session.section || req.headers['x-auth-section'] || req.query?.auth_section || 'boys';
+    const permissions = getTeacherPermissionsForUser(username, req.sectionData);
+    const isAdminUser = isUserAdmin(username, req.sectionData);
+    const assignments = (Array.isArray(permissions)) ? permissions : [];
+
     res.json({
         username: username,
         section: section,
+        isAdmin: isAdminUser,
+        assignments: assignments,
         permissions: getUserAllowedOptions(username, req.sectionData),
         subjectsByClass: req.sectionData.subjectsByClass,
         studentsByClass: req.sectionData.studentsByClass
+    });
+});
+
+// Endpoint pour récupérer les attributions d'un enseignant et la liste de toutes les matières/classes
+app.get('/api/teacher/assignments', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const section = req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const { permMap, studentsMap } = getAdminSectionMaps(section);
+    
+    const teacherPerms = permMap[teacher];
+    const assignments = Array.isArray(teacherPerms) ? teacherPerms : [];
+    const allClasses = Object.keys(studentsMap).sort();
+    const allSubjects = [...new Set(req.sectionData.allSubjects)].sort();
+
+    res.json({
+        success: true,
+        teacher,
+        section,
+        isAdmin: isUserAdmin(teacher, req.sectionData),
+        assignments,
+        allClasses,
+        allSubjects
+    });
+});
+
+// Endpoint pour qu'un enseignant ajoute/modifie lui-même une matière et des classes à son compte
+app.post('/api/teacher/add-assignment', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const { subject, classes } = req.body;
+    if (!subject || !subject.trim()) {
+        return res.status(400).json({ success: false, message: 'Le nom de la matière est requis.' });
+    }
+    const cleanSubject = subject.trim();
+    const classList = Array.isArray(classes) ? classes : String(classes || '').split(',').map(c => c.trim()).filter(Boolean);
+    if (classList.length === 0) {
+        return res.status(400).json({ success: false, message: 'Veuillez sélectionner au moins une classe pour cette matière.' });
+    }
+
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const { permMap, studentsMap } = getAdminSectionMaps(section);
+
+    // S'assurer que les classes existent dans la structure
+    classList.forEach(cls => {
+        if (!studentsMap[cls]) studentsMap[cls] = [];
+    });
+
+    if (!permMap[teacher] || !Array.isArray(permMap[teacher])) {
+        permMap[teacher] = [];
+    }
+
+    const existingIdx = permMap[teacher].findIndex(p => (p.subject || '').toLowerCase() === cleanSubject.toLowerCase());
+    if (existingIdx !== -1) {
+        const merged = [...new Set([...permMap[teacher][existingIdx].classes, ...classList])];
+        permMap[teacher][existingIdx].classes = merged;
+        permMap[teacher][existingIdx].subject = cleanSubject;
+    } else {
+        permMap[teacher].push({
+            subject: cleanSubject,
+            classes: classList
+        });
+    }
+
+    saveDatabaseToDisk();
+    console.log(`✅ Attribution ajoutée pour ${teacher} : ${cleanSubject} -> ${classList.join(', ')}`);
+
+    const updatedSectionData = getSectionData(section);
+    res.json({
+        success: true,
+        message: `La matière "${cleanSubject}" a été ajoutée à votre compte pour les classes : ${classList.join(', ')}.`,
+        assignments: permMap[teacher],
+        permissions: getUserAllowedOptions(teacher, updatedSectionData),
+        subjectsByClass: updatedSectionData.subjectsByClass
+    });
+});
+
+// Endpoint pour retirer une matière de ses attributions
+app.post('/api/teacher/remove-assignment', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const { subject } = req.body;
+    if (!subject) return res.status(400).json({ success: false, message: 'Matière requise.' });
+
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const { permMap } = getAdminSectionMaps(section);
+
+    if (Array.isArray(permMap[teacher])) {
+        permMap[teacher] = permMap[teacher].filter(p => (p.subject || '').toLowerCase() !== subject.trim().toLowerCase());
+    }
+
+    saveDatabaseToDisk();
+    const updatedSectionData = getSectionData(section);
+    res.json({
+        success: true,
+        message: `Matière "${subject}" retirée de vos attributions.`,
+        assignments: permMap[teacher] || [],
+        permissions: getUserAllowedOptions(teacher, updatedSectionData),
+        subjectsByClass: updatedSectionData.subjectsByClass
+    });
+});
+
+// Endpoint pour récupérer les données du profil enseignant
+app.get('/api/teacher/profile', requireAuth, sectionMiddleware, (req, res) => {
+    const teacher = req.session.user;
+    const section = req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const { allowedMap, permMap } = getAdminSectionMaps(section);
+
+    res.json({
+        success: true,
+        username: teacher,
+        section,
+        isAdmin: isUserAdmin(teacher, req.sectionData),
+        assignments: Array.isArray(permMap[teacher]) ? permMap[teacher] : []
+    });
+});
+
+// Endpoint pour modifier son identifiant (login) et son mot de passe
+app.post('/api/teacher/update-profile', requireAuth, sectionMiddleware, (req, res) => {
+    const currentUsername = req.session.user;
+    const { newUsername, newPassword } = req.body;
+
+    const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+    const { allowedMap, permMap, sec } = getAdminSectionMaps(section);
+
+    let activeUser = currentUsername;
+
+    // Mise à jour de l'identifiant (Login)
+    if (newUsername && newUsername.trim() && newUsername.trim() !== currentUsername) {
+        const cleanNew = newUsername.trim();
+        const conflict = Object.keys(allowedMap).find(k => k.toLowerCase() === cleanNew.toLowerCase() && k.toLowerCase() !== currentUsername.toLowerCase());
+        if (conflict) {
+            return res.status(400).json({ success: false, message: `L'identifiant "${cleanNew}" est déjà utilisé par un autre compte.` });
+        }
+
+        const currentPass = allowedMap[currentUsername] || currentUsername;
+        const currentPerms = permMap[currentUsername] || [];
+
+        allowedMap[cleanNew] = (newPassword && newPassword.trim()) ? newPassword.trim() : currentPass;
+        permMap[cleanNew] = currentPerms;
+
+        delete allowedMap[currentUsername];
+        delete permMap[currentUsername];
+
+        // Mettre à jour l'auteur dans les notes existantes
+        inMemoryNotes.forEach(n => {
+            if (n.teacher === currentUsername && (n.section || 'boys') === sec) {
+                n.teacher = cleanNew;
+            }
+        });
+
+        req.session.user = cleanNew;
+        activeUser = cleanNew;
+    } else if (newPassword && newPassword.trim()) {
+        allowedMap[activeUser] = newPassword.trim();
+    }
+
+    saveDatabaseToDisk();
+    console.log(`✅ Profil mis à jour pour ${currentUsername} -> ${activeUser}`);
+
+    res.json({
+        success: true,
+        message: 'Vos identifiants ont été mis à jour avec succès.',
+        username: activeUser
     });
 });
 
@@ -598,7 +765,19 @@ app.post('/save-notes', requireAuth, sectionMiddleware, async (req, res) => {
     const section = req.body.section || req.session.section || req.headers['x-auth-section'] || 'boys';
 
     if (!await checkUserPermissionAndSubjectExists(teacher, studentClass, subject, req.sectionData)) {
-        return res.status(403).send(`❌ Permission refusée.`);
+        const { permMap, studentsMap } = getAdminSectionMaps(section);
+        if (!studentsMap[studentClass]) studentsMap[studentClass] = [];
+        if (!permMap[teacher] || !Array.isArray(permMap[teacher])) permMap[teacher] = [];
+        const exIdx = permMap[teacher].findIndex(p => (p.subject || '').toLowerCase() === String(subject).trim().toLowerCase());
+        if (exIdx !== -1) {
+            if (!permMap[teacher][exIdx].classes.includes(studentClass)) {
+                permMap[teacher][exIdx].classes.push(studentClass);
+            }
+        } else {
+            permMap[teacher].push({ subject: String(subject).trim(), classes: [studentClass] });
+        }
+        saveDatabaseToDisk();
+        req.sectionData = getSectionData(section);
     }
     try {
         const cleanTc = (travauxClasse === '' || travauxClasse === null || travauxClasse === undefined) ? null : String(travauxClasse);
@@ -682,7 +861,19 @@ app.put('/update-note/:id', requireAuth, sectionMiddleware, async (req, res) => 
 
         if (studentClass && subject) {
             if (!await checkUserPermissionAndSubjectExists(teacher, studentClass, subject, req.sectionData)) {
-                return res.status(403).json({ success: false, message: '❌ Permission refusée.' });
+                const { permMap, studentsMap } = getAdminSectionMaps(section);
+                if (!studentsMap[studentClass]) studentsMap[studentClass] = [];
+                if (!permMap[teacher] || !Array.isArray(permMap[teacher])) permMap[teacher] = [];
+                const exIdx = permMap[teacher].findIndex(p => (p.subject || '').toLowerCase() === String(subject).trim().toLowerCase());
+                if (exIdx !== -1) {
+                    if (!permMap[teacher][exIdx].classes.includes(studentClass)) {
+                        permMap[teacher][exIdx].classes.push(studentClass);
+                    }
+                } else {
+                    permMap[teacher].push({ subject: String(subject).trim(), classes: [studentClass] });
+                }
+                saveDatabaseToDisk();
+                req.sectionData = getSectionData(section);
             }
         }
 
@@ -757,7 +948,19 @@ app.post('/api/save-note-auto', requireAuth, sectionMiddleware, async (req, res)
         }
 
         if (!await checkUserPermissionAndSubjectExists(teacher, studentClass, subject, req.sectionData)) {
-            return res.status(403).json({ success: false, message: 'Permission refusée pour cette matière et classe.' });
+            const { permMap, studentsMap } = getAdminSectionMaps(section);
+            if (!studentsMap[studentClass]) studentsMap[studentClass] = [];
+            if (!permMap[teacher] || !Array.isArray(permMap[teacher])) permMap[teacher] = [];
+            const exIdx = permMap[teacher].findIndex(p => (p.subject || '').toLowerCase() === String(subject).trim().toLowerCase());
+            if (exIdx !== -1) {
+                if (!permMap[teacher][exIdx].classes.includes(studentClass)) {
+                    permMap[teacher][exIdx].classes.push(studentClass);
+                }
+            } else {
+                permMap[teacher].push({ subject: String(subject).trim(), classes: [studentClass] });
+            }
+            saveDatabaseToDisk();
+            req.sectionData = getSectionData(section);
         }
 
         let note = null;
@@ -1547,27 +1750,27 @@ app.get('/admin/get-teachers', requireAuth, sectionMiddleware, (req, res) => {
     res.json({ success: true, teachers: list });
 });
 
-// Endpoint de synchronisation client-serveur bidirectionnelle
 app.post('/api/sync-data', requireAuth, sectionMiddleware, (req, res) => {
     const user = req.session.user;
-    if (!isUserAdmin(user, req.sectionData)) {
-        return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs.' });
-    }
+    const isAdminUser = isUserAdmin(user, req.sectionData);
     const { section, studentsByClass, teacherPermissions, allowedTeachers, notes } = req.body;
     const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
     if (!dbStorage[sec]) dbStorage[sec] = {};
-    if (studentsByClass && typeof studentsByClass === 'object') {
-        dbStorage[sec].studentsByClass = studentsByClass;
-    }
-    if (teacherPermissions && typeof teacherPermissions === 'object') {
-        dbStorage[sec].teacherPermissions = teacherPermissions;
-        dbStorage[sec].teacherPermissions["Mohamed"] = "admin";
-        if (sec === 'girls') dbStorage[sec].teacherPermissions["Zohra"] = "admin";
-    }
-    if (allowedTeachers && typeof allowedTeachers === 'object') {
-        dbStorage[sec].allowedTeachers = { ...(dbStorage[sec].allowedTeachers || {}), ...allowedTeachers };
-        dbStorage[sec].allowedTeachers["Mohamed"] = "Med120786";
-        if (sec === 'girls') dbStorage[sec].allowedTeachers["Zohra"] = "Zohra";
+
+    if (isAdminUser) {
+        if (studentsByClass && typeof studentsByClass === 'object') {
+            dbStorage[sec].studentsByClass = studentsByClass;
+        }
+        if (teacherPermissions && typeof teacherPermissions === 'object') {
+            dbStorage[sec].teacherPermissions = teacherPermissions;
+            dbStorage[sec].teacherPermissions["Mohamed"] = "admin";
+            if (sec === 'girls') dbStorage[sec].teacherPermissions["Zohra"] = "admin";
+        }
+        if (allowedTeachers && typeof allowedTeachers === 'object') {
+            dbStorage[sec].allowedTeachers = { ...(dbStorage[sec].allowedTeachers || {}), ...allowedTeachers };
+            dbStorage[sec].allowedTeachers["Mohamed"] = "Med120786";
+            if (sec === 'girls') dbStorage[sec].allowedTeachers["Zohra"] = "Zohra";
+        }
     }
     if (Array.isArray(notes)) {
         notes.forEach(incoming => {

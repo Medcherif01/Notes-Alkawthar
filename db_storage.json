@@ -2,14 +2,14 @@
   "boys": {
     "studentsByClass": {
       "PEI1": [
+        "Ali Kotbi",
         "Faysal Achar",
         "Jad Mahayni",
         "Manaf Kotbi"
       ],
       "PEI2": [
         "Ahmed Bouaziz",
-        "Ali Kotbi",
-        "Eyad Hassan",
+        "Karim Al-Mansour",
         "Yasser Younes"
       ],
       "PEI3": [
@@ -33,38 +33,6 @@
     },
     "teacherPermissions": {
       "Mohamed": "admin",
-      "Sami": [
-        {
-          "subject": "Musique",
-          "classes": [
-            "PEI1",
-            "PEI2",
-            "PEI3",
-            "PEI4",
-            "DP2"
-          ]
-        },
-        {
-          "subject": "ART",
-          "classes": [
-            "PEI1",
-            "PEI2",
-            "PEI3",
-            "PEI4",
-            "DP2"
-          ]
-        },
-        {
-          "subject": "P.E",
-          "classes": [
-            "PEI1",
-            "PEI2",
-            "PEI3",
-            "PEI4",
-            "DP2"
-          ]
-        }
-      ],
       "Mohamed Teacher": [
         {
           "subject": "Physique-Chimie",
@@ -193,11 +161,49 @@
             "PEI4"
           ]
         }
+      ],
+      "SamiPro": [
+        {
+          "subject": "Musique",
+          "classes": [
+            "PEI1",
+            "PEI2",
+            "PEI3",
+            "PEI4",
+            "DP2"
+          ]
+        },
+        {
+          "subject": "ART",
+          "classes": [
+            "PEI1",
+            "PEI2",
+            "PEI3",
+            "PEI4",
+            "DP2"
+          ]
+        },
+        {
+          "subject": "P.E",
+          "classes": [
+            "PEI1",
+            "PEI2",
+            "PEI3",
+            "PEI4",
+            "DP2"
+          ]
+        },
+        {
+          "subject": "Physique-Chimie",
+          "classes": [
+            "PEI1",
+            "PEI2"
+          ]
+        }
       ]
     },
     "allowedTeachers": {
       "Mohamed": "Med120786",
-      "Sami": "Sami",
       "Mohamed Teacher": "Mohamed Teacher",
       "Abas": "Abas",
       "Sylvano": "Sylvano",
@@ -205,7 +211,8 @@
       "Youssif": "Youssif",
       "Tonga": "Tonga",
       "Kamel": "Kamel",
-      "Prof Martin": "pass123"
+      "Prof Martin": "pass123",
+      "SamiPro": "MyNewPassword123"
     }
   },
   "girls": {
@@ -509,6 +516,23 @@
       "enteredInSystem": false,
       "createdAt": "2026-10-21T06:52:39.852Z",
       "updatedAt": "2026-10-21T07:00:40.514Z"
+    },
+    {
+      "_id": "2",
+      "class": "PEI1",
+      "subject": "Physique-Chimie",
+      "studentName": "Faysal Achar",
+      "semester": "S1",
+      "section": "boys",
+      "travauxClasse": "18",
+      "devoirs": null,
+      "evaluation": null,
+      "examen": null,
+      "teacher": "SamiPro",
+      "approvedByAdmin": false,
+      "enteredInSystem": false,
+      "createdAt": "2026-10-21T07:21:42.794Z",
+      "updatedAt": "2026-10-21T07:21:42.794Z"
     }
   ]
 }

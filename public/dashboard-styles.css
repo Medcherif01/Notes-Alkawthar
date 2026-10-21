@@ -320,6 +320,28 @@ body.girls-section .modern-header {
     box-shadow: 0 6px 18px rgba(217,119,6,0.5);
 }
 
+.assignment-btn {
+    background: linear-gradient(135deg, #0284C7, #0EA5E9);
+    color: white;
+    box-shadow: 0 3px 10px rgba(2, 132, 199, 0.35);
+}
+
+.assignment-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(2, 132, 199, 0.5);
+}
+
+.profile-btn {
+    background: linear-gradient(135deg, #7C3AED, #8B5CF6);
+    color: white;
+    box-shadow: 0 3px 10px rgba(124, 58, 237, 0.35);
+}
+
+.profile-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(124, 58, 237, 0.5);
+}
+
 /* ===== SÉLECTEUR DE SEMESTRE ===== */
 .semester-selector-modern {
     max-width: 1200px;

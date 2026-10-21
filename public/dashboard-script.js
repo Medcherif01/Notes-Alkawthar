@@ -7,8 +7,10 @@ const originalFetch = window.fetch;
 window.fetch = function(url, options = {}) {
     options = options || {};
     options.headers = options.headers || {};
-    const savedUser = localStorage.getItem('al_kawthar_user');
-    const savedSection = localStorage.getItem('al_kawthar_section');
+    options.credentials = options.credentials || 'same-origin';
+    const savedUser = localStorage.getItem('al_kawthar_user') || (typeof currentUserData !== 'undefined' ? currentUserData?.username : null);
+    const savedSection = localStorage.getItem('al_kawthar_section') || (typeof currentUserData !== 'undefined' ? currentUserData?.section : 'boys');
+    
     if (savedUser) {
         if (options.headers instanceof Headers) {
             if (!options.headers.has('x-auth-user')) options.headers.set('x-auth-user', savedUser);
@@ -21,6 +23,18 @@ window.fetch = function(url, options = {}) {
             if (savedSection && !options.headers['x-auth-section']) options.headers['x-auth-section'] = savedSection;
         }
     }
+
+    // Si options.body est un objet JSON stringifié, injecter section si manquant
+    if (typeof options.body === 'string' && options.body.startsWith('{') && savedSection) {
+        try {
+            const parsed = JSON.parse(options.body);
+            if (typeof parsed === 'object' && parsed !== null && !parsed.section) {
+                parsed.section = savedSection;
+                options.body = JSON.stringify(parsed);
+            }
+        } catch (e) {}
+    }
+
     return originalFetch.call(this, url, options);
 };
 
@@ -164,8 +178,9 @@ function saveToLocalBackup(section) {
 
         const backupData = {
             timestamp: Date.now(),
+            userModified: true,
             section: sec,
-            studentsByClass: studentsByClassGlobal,
+            studentsByClass: JSON.parse(JSON.stringify(studentsByClassGlobal || {})),
             teachers: teachersToSave,
             notes: mergedNotes
         };
@@ -178,7 +193,7 @@ function saveToLocalBackup(section) {
 
 async function checkAndAutoSyncWithLocalBackup(section) {
     try {
-        const sec = section || 'boys';
+        const sec = section || localStorage.getItem('al_kawthar_section') || 'boys';
         const key = `al_kawthar_persistent_backup_${sec}`;
         const raw = localStorage.getItem(key);
         if (!raw) return;
@@ -186,15 +201,10 @@ async function checkAndAutoSyncWithLocalBackup(section) {
         if (!backup || !backup.studentsByClass) return;
 
         const backupClasses = Object.keys(backup.studentsByClass || {});
-        const serverClasses = Object.keys(studentsByClassGlobal || {});
 
-        const hasCustomData = backupClasses.length > 0 && (
-            JSON.stringify(studentsByClassGlobal) !== JSON.stringify(backup.studentsByClass) ||
-            (backup.notes && backup.notes.length > 0 && allNotesData.length === 0) ||
-            (backup.teachers && backup.teachers.length > 0)
-        );
+        const hasCustomData = backup.userModified === true || backupClasses.length > 0;
 
-        if (hasCustomData && isAdmin) {
+        if (hasCustomData) {
             console.log('🔄 Restauration automatique des données depuis le stockage persistant...');
             const teacherPerms = {};
             const allowedMap = {};
@@ -227,6 +237,10 @@ async function checkAndAutoSyncWithLocalBackup(section) {
                     subjectsByClassGlobal = d.subjectsByClass;
                     studentsByClassGlobal = d.studentsByClass;
                     populatePermissionBasedDropdowns();
+                }
+            } else {
+                if (backup.studentsByClass && Object.keys(backup.studentsByClass).length > 0) {
+                    studentsByClassGlobal = backup.studentsByClass;
                 }
             }
         }
@@ -417,6 +431,393 @@ function setupEventListeners() {
     generateWordButton.addEventListener("click", generateWordFiles);
     generateExcelButton.addEventListener("click", generateExcelFile);
     logoutButton.addEventListener("click", handleLogout);
+
+    // Boutons d'action Enseignant (Attributions & Profil)
+    const openAssignBtn = document.getElementById("openTeacherAssignmentsBtn");
+    if (openAssignBtn) openAssignBtn.addEventListener("click", openTeacherAssignmentsModal);
+    const bannerAssignBtn = document.getElementById("bannerOpenAssignmentsBtn");
+    if (bannerAssignBtn) bannerAssignBtn.addEventListener("click", openTeacherAssignmentsModal);
+    const closeAssignBtn = document.getElementById("closeTeacherAssignmentsModalBtn");
+    if (closeAssignBtn) closeAssignBtn.addEventListener("click", closeTeacherAssignmentsModal);
+    
+    const teacherSubSelect = document.getElementById("teacherSubjectSelect");
+    if (teacherSubSelect) {
+        teacherSubSelect.addEventListener("change", () => {
+            const customContainer = document.getElementById("customSubjectContainer");
+            if (customContainer) {
+                customContainer.style.display = teacherSubSelect.value === '__CUSTOM__' ? 'block' : 'none';
+            }
+        });
+    }
+
+    const selectAllBtn = document.getElementById("selectAllClassesBtn");
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener("click", () => {
+            const boxes = document.querySelectorAll('input[name="teacherClassCheckbox"]');
+            const anyUnchecked = Array.from(boxes).some(b => !b.checked);
+            boxes.forEach(b => b.checked = anyUnchecked);
+            selectAllBtn.textContent = anyUnchecked ? 'Tout décocher' : 'Tout cocher';
+        });
+    }
+
+    const addAssignForm = document.getElementById("teacherAddAssignmentForm");
+    if (addAssignForm) addAssignForm.addEventListener("submit", handleTeacherAddAssignment);
+
+    // Profil Enseignant (Modifier Login & Mot de passe)
+    const openProfileBtn = document.getElementById("openProfileModalBtn");
+    if (openProfileBtn) openProfileBtn.addEventListener("click", openTeacherProfileModal);
+    const closeProfileBtn = document.getElementById("closeTeacherProfileModalBtn");
+    if (closeProfileBtn) closeProfileBtn.addEventListener("click", closeTeacherProfileModal);
+    const cancelProfileBtn = document.getElementById("cancelProfileBtn");
+    if (cancelProfileBtn) cancelProfileBtn.addEventListener("click", closeTeacherProfileModal);
+
+    const toggleNewPass = document.getElementById("toggleProfileNewPassword");
+    if (toggleNewPass) {
+        toggleNewPass.addEventListener("click", function() {
+            const inp = document.getElementById("profileNewPassword");
+            const isPass = inp.type === 'password';
+            inp.type = isPass ? 'text' : 'password';
+            this.classList.toggle('fa-eye', !isPass);
+            this.classList.toggle('fa-eye-slash', isPass);
+        });
+    }
+    const toggleConfPass = document.getElementById("toggleProfileConfirmPassword");
+    if (toggleConfPass) {
+        toggleConfPass.addEventListener("click", function() {
+            const inp = document.getElementById("profileConfirmPassword");
+            const isPass = inp.type === 'password';
+            inp.type = isPass ? 'text' : 'password';
+            this.classList.toggle('fa-eye', !isPass);
+            this.classList.toggle('fa-eye-slash', isPass);
+        });
+    }
+
+    const profileForm = document.getElementById("teacherProfileForm");
+    if (profileForm) profileForm.addEventListener("submit", handleTeacherProfileSubmit);
+}
+
+// ====================================
+// GESTION DES ATTRIBUTIONS ENSEIGNANT (Matière & Classes)
+// ====================================
+async function openTeacherAssignmentsModal() {
+    const modal = document.getElementById('teacherAssignmentsModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+    const notice = document.getElementById('teacherAssignmentNotice');
+    if (notice) notice.textContent = '';
+    
+    try {
+        const res = await fetch('/api/teacher/assignments');
+        if (!res.ok) throw new Error('Erreur de chargement');
+        const data = await res.json();
+        
+        // Remplir le select des matières
+        const subjectSelect = document.getElementById('teacherSubjectSelect');
+        if (subjectSelect) {
+            subjectSelect.innerHTML = '<option value="">— Choisir dans la liste des matières —</option>';
+            const defaultSubjects = ['Maths', 'Français', 'Anglais', 'Physique-Chimie', 'Biologie', 'Sciences', 'L.L', 'I.S', 'ART', 'Design', 'Musique', 'P.E', 'S.E.S', 'E.S'];
+            const allSubs = [...new Set([...(data.allSubjects || []), ...defaultSubjects])].sort();
+            allSubs.forEach(sub => {
+                subjectSelect.add(new Option(sub, sub));
+            });
+            subjectSelect.add(new Option('+ Autre matière (saisir manuellement)...', '__CUSTOM__'));
+        }
+
+        const customContainer = document.getElementById('customSubjectContainer');
+        if (customContainer) customContainer.style.display = 'none';
+        const customInp = document.getElementById('teacherCustomSubjectInput');
+        if (customInp) customInp.value = '';
+
+        // Remplir les cases à cocher des classes
+        const classesListEl = document.getElementById('teacherClassesCheckboxList');
+        if (classesListEl) {
+            classesListEl.innerHTML = '';
+            const schoolClasses = Object.keys(studentsByClassGlobal || {}).length > 0 ? Object.keys(studentsByClassGlobal).sort() : (data.allClasses || ['PEI1', 'PEI2', 'PEI3', 'PEI4', 'PEI5', 'DP1', 'DP2']);
+            schoolClasses.forEach(cls => {
+                const label = document.createElement('label');
+                label.style.display = 'inline-flex';
+                label.style.alignItems = 'center';
+                label.style.gap = '0.35rem';
+                label.style.fontSize = '0.82rem';
+                label.style.fontWeight = '600';
+                label.style.padding = '0.35rem 0.65rem';
+                label.style.background = 'var(--surface-2)';
+                label.style.borderRadius = '6px';
+                label.style.cursor = 'pointer';
+                label.style.border = '1px solid var(--border)';
+                label.innerHTML = `
+                    <input type="checkbox" name="teacherClassCheckbox" value="${cls}">
+                    <span>${cls}</span>
+                `;
+                classesListEl.appendChild(label);
+            });
+        }
+
+        renderTeacherCurrentAssignments(data.assignments || []);
+    } catch (e) {
+        console.error('Erreur ouverture modal attributions:', e);
+    }
+}
+
+function closeTeacherAssignmentsModal() {
+    const modal = document.getElementById('teacherAssignmentsModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function showTeacherAssignmentNotice(msg, isError = false) {
+    const notice = document.getElementById('teacherAssignmentNotice');
+    if (notice) {
+        notice.style.color = isError ? '#EF4444' : '#10B981';
+        notice.textContent = msg;
+    }
+}
+
+function renderTeacherCurrentAssignments(assignments) {
+    const container = document.getElementById('teacherCurrentAssignmentsList');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!assignments || assignments.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 1.25rem; text-align: center; color: var(--text-muted); background: var(--surface-2); border-radius: var(--radius-sm); border: 1px dashed var(--border); font-size: 0.85rem;">
+                <i class="fas fa-info-circle" style="opacity: 0.6; margin-right: 0.35rem;"></i>
+                Aucune matière n'est encore enregistrée pour votre compte. Choisissez votre matière et ses classes ci-dessus.
+            </div>
+        `;
+        return;
+    }
+
+    assignments.forEach(a => {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.justifyContent = 'space-between';
+        row.style.alignItems = 'center';
+        row.style.padding = '0.65rem 0.9rem';
+        row.style.background = 'var(--surface)';
+        row.style.border = '1px solid var(--border)';
+        row.style.borderRadius = 'var(--radius-sm)';
+        row.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+
+        const classesBadges = (a.classes || []).map(c => 
+            `<span style="background: #E0F2FE; color: #0369A1; font-weight: 700; font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 99px;">${c}</span>`
+        ).join(' ');
+
+        row.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                <strong style="color: var(--text-primary); font-size: 0.92rem; display: flex; align-items: center; gap: 0.4rem;">
+                    <i class="fas fa-book" style="color: #0284C7; font-size: 0.82rem;"></i>
+                    ${a.subject}
+                </strong>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Classes enseignées :</span>
+                    ${classesBadges}
+                </div>
+            </div>
+            <button type="button" class="admin-btn admin-btn-danger" style="font-size: 0.72rem; padding: 0.3rem 0.65rem;" onclick="removeTeacherAssignment('${(a.subject || '').replace(/'/g, "\\'")}')">
+                <i class="fas fa-trash-alt"></i> Retirer
+            </button>
+        `;
+        container.appendChild(row);
+    });
+}
+
+async function handleTeacherAddAssignment(e) {
+    e.preventDefault();
+    const selectEl = document.getElementById('teacherSubjectSelect');
+    const customInp = document.getElementById('teacherCustomSubjectInput');
+    let subject = selectEl.value === '__CUSTOM__' ? customInp.value.trim() : selectEl.value.trim();
+
+    if (!subject) {
+        showTeacherAssignmentNotice('Veuillez sélectionner ou entrer un nom de matière.', true);
+        return;
+    }
+
+    const checkedBoxes = Array.from(document.querySelectorAll('input[name="teacherClassCheckbox"]:checked'));
+    const classes = checkedBoxes.map(b => b.value);
+
+    if (classes.length === 0) {
+        showTeacherAssignmentNotice('Veuillez cocher au moins une classe pour cette matière.', true);
+        return;
+    }
+
+    const saveBtn = document.getElementById('saveAssignmentBtn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement...';
+
+    try {
+        const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+        const res = await fetch('/api/teacher/add-assignment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                subject,
+                classes,
+                section: currentSec
+            })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+            showTeacherAssignmentNotice(`✅ Matière "${subject}" ajoutée pour : ${classes.join(', ')} !`);
+            showNotification(`✅ Matière "${subject}" ajoutée à vos attributions !`);
+            
+            // Recharger les données de l'application
+            await refreshAppData();
+            
+            // Mettre à jour l'affichage de la modal
+            renderTeacherCurrentAssignments(result.assignments || []);
+            
+            // Réinitialiser la sélection
+            selectEl.value = '';
+            customInp.value = '';
+            document.getElementById('customSubjectContainer').style.display = 'none';
+            checkedBoxes.forEach(b => b.checked = false);
+
+            // Pré-sélectionner automatiquement dans le formulaire de saisie de notes !
+            if (classSelect && classes[0]) {
+                classSelect.value = classes[0];
+                updateFormOnClassChange();
+                setTimeout(() => {
+                    if (subjectSelect) {
+                        subjectSelect.value = subject;
+                        updateFormOnSubjectChange();
+                    }
+                }, 100);
+            }
+        } else {
+            showTeacherAssignmentNotice(result.message || 'Erreur lors de l\'enregistrement.', true);
+        }
+    } catch (err) {
+        showTeacherAssignmentNotice('Erreur réseau lors de l\'ajout.', true);
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-check"></i> <span>Ajouter cette matière & ses classes à mon compte</span>';
+    }
+}
+
+window.removeTeacherAssignment = async function(subject) {
+    if (!confirm(`Voulez-vous vraiment retirer la matière "${subject}" de vos attributions ?`)) return;
+    try {
+        const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+        const res = await fetch('/api/teacher/remove-assignment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject, section: currentSec })
+        });
+        const result = await res.json();
+        if (result.success) {
+            showTeacherAssignmentNotice(`Matière "${subject}" retirée.`);
+            showNotification(`Matière "${subject}" retirée de vos attributions.`);
+            renderTeacherCurrentAssignments(result.assignments || []);
+            await refreshAppData();
+        } else {
+            showTeacherAssignmentNotice(result.message || 'Erreur lors du retrait.', true);
+        }
+    } catch (e) {
+        showTeacherAssignmentNotice('Erreur réseau.', true);
+    }
+};
+
+// ====================================
+// GESTION DU PROFIL ENSEIGNANT (Login & Mot de passe)
+// ====================================
+function openTeacherProfileModal() {
+    const modal = document.getElementById('teacherProfileModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+    
+    const curUser = (currentUserData?.username || localStorage.getItem('al_kawthar_user') || '').trim();
+    const curInp = document.getElementById('profileCurrentUsername');
+    if (curInp) curInp.value = curUser;
+
+    const newU = document.getElementById('profileNewUsername');
+    if (newU) newU.value = '';
+    const newP = document.getElementById('profileNewPassword');
+    if (newP) newP.value = '';
+    const confP = document.getElementById('profileConfirmPassword');
+    if (confP) confP.value = '';
+
+    const msgEl = document.getElementById('profileMessage');
+    if (msgEl) {
+        msgEl.textContent = '';
+        msgEl.style.color = 'inherit';
+    }
+}
+
+function closeTeacherProfileModal() {
+    const modal = document.getElementById('teacherProfileModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+async function handleTeacherProfileSubmit(e) {
+    e.preventDefault();
+    const newUsername = document.getElementById('profileNewUsername').value.trim();
+    const newPassword = document.getElementById('profileNewPassword').value.trim();
+    const confirmPassword = document.getElementById('profileConfirmPassword').value.trim();
+    const msgEl = document.getElementById('profileMessage');
+
+    if (!newUsername && !newPassword) {
+        msgEl.style.color = '#EF4444';
+        msgEl.textContent = 'Veuillez saisir un nouveau nom d\'utilisateur ou un nouveau mot de passe.';
+        return;
+    }
+
+    if (newPassword && newPassword !== confirmPassword) {
+        msgEl.style.color = '#EF4444';
+        msgEl.textContent = 'Les deux mots de passe ne correspondent pas.';
+        return;
+    }
+
+    const submitBtn = document.getElementById('submitProfileBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement...';
+
+    try {
+        const currentSec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+        const res = await fetch('/api/teacher/update-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                newUsername: newUsername || undefined,
+                newPassword: newPassword || undefined,
+                section: currentSec
+            })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+            msgEl.style.color = '#10B981';
+            msgEl.textContent = '✅ Vos identifiants ont été enregistrés avec succès !';
+            showNotification('✅ Vos identifiants ont été mis à jour avec succès !');
+
+            if (result.username) {
+                usernameDisplay.textContent = result.username;
+                localStorage.setItem('al_kawthar_user', result.username);
+                if (currentUserData) currentUserData.username = result.username;
+            }
+
+            setTimeout(() => {
+                closeTeacherProfileModal();
+            }, 1200);
+        } else {
+            msgEl.style.color = '#EF4444';
+            msgEl.textContent = result.message || 'Erreur lors de la mise à jour.';
+        }
+    } catch (err) {
+        msgEl.style.color = '#EF4444';
+        msgEl.textContent = 'Erreur réseau lors de la mise à jour.';
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-save"></i> <span>Enregistrer mes modifications</span>';
+    }
 }
 
 // ====================================
@@ -695,6 +1096,7 @@ async function handleFormSubmit(e) {
                 document.getElementById('noteForm').setAttribute('data-note-id', savedNote._id);
             }
             await fetchAndDisplayData();
+            saveToLocalBackup(currentSec);
             
             if (autoProgressEnabled) {
                 setTimeout(() => {
@@ -1471,6 +1873,7 @@ window.updateNoteField = async function(noteId, field, value, studentClass, subj
             } else {
                 allNotesData.push(savedNote);
             }
+            saveToLocalBackup(currentSec);
 
             // Si c'était un temp-row, transformer la ligne avec l'ID officiel
             if (rowEl && (!noteId || noteId === 'null')) {
@@ -2260,6 +2663,7 @@ function bindAdminControlsOnce() {
                     classNameInput.value = '';
                     panelAddClass.style.display = 'none';
                     if (!studentsByClassGlobal[className]) studentsByClassGlobal[className] = [];
+                    saveToLocalBackup();
                     await refreshAppData();
                     populateAdminModalData();
                     await fetchAndDisplayData();
@@ -2300,6 +2704,7 @@ function bindAdminControlsOnce() {
                         studentsByClassGlobal[className].push(studentName);
                         studentsByClassGlobal[className].sort();
                     }
+                    saveToLocalBackup();
                     await refreshAppData();
                     populateAdminModalData();
                     await fetchAndDisplayData();
@@ -2698,6 +3103,7 @@ function openRenameClassModal(oldClassName) {
                 const result = await res.json();
                 if (result.success) {
                     showAdminNotice(result.message);
+                    saveToLocalBackup();
                     await refreshAppData();
                     populateAdminModalData();
                     await fetchAndDisplayData();
@@ -2728,6 +3134,7 @@ function openDeleteClassModal(className) {
                 if (result.success) {
                     showAdminNotice(result.message);
                     delete studentsByClassGlobal[className];
+                    saveToLocalBackup();
                     await refreshAppData();
                     populateAdminModalData();
                     await fetchAndDisplayData();
@@ -2762,6 +3169,7 @@ function openRenameStudentModal(className, oldName) {
                         const idx = studentsByClassGlobal[className].indexOf(oldName);
                         if (idx !== -1) studentsByClassGlobal[className][idx] = newName;
                     }
+                    saveToLocalBackup();
                     await refreshAppData();
                     populateAdminModalData();
                     await fetchAndDisplayData();
@@ -2800,6 +3208,7 @@ function openTransferStudentModal(currentClass, studentName) {
                     if (!studentsByClassGlobal[targetClass]) studentsByClassGlobal[targetClass] = [];
                     studentsByClassGlobal[targetClass].push(studentName);
                     studentsByClassGlobal[targetClass].sort();
+                    saveToLocalBackup();
                     await refreshAppData();
                     populateAdminModalData();
                     await fetchAndDisplayData();
@@ -2831,6 +3240,7 @@ function openDeleteStudentModal(className, studentName) {
                     if (studentsByClassGlobal[className]) {
                         studentsByClassGlobal[className] = studentsByClassGlobal[className].filter(s => s !== studentName);
                     }
+                    saveToLocalBackup();
                     await refreshAppData();
                     populateAdminModalData();
                     await fetchAndDisplayData();
