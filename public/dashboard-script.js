@@ -143,6 +143,50 @@ const ADMINS = {
     girls: ['Zohra', 'Mohamed']
 };
 
+async function manualSaveDatabase() {
+    const sec = currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
+    showNotification('💾 Enregistrement dans la base de données en cours...');
+
+    const teacherPerms = {};
+    const allowedMap = {};
+    if (Array.isArray(adminTeachersCache) && adminTeachersCache.length > 0) {
+        adminTeachersCache.forEach(t => {
+            if (t.name) {
+                teacherPerms[t.name] = t.isAdmin ? 'admin' : (t.assignments || []);
+                allowedMap[t.name] = t.password || t.name;
+            }
+        });
+    }
+
+    try {
+        const res = await fetch('/api/save-database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                section: sec,
+                studentsByClass: studentsByClassGlobal,
+                teacherPermissions: Object.keys(teacherPerms).length > 0 ? teacherPerms : undefined,
+                allowedTeachers: Object.keys(allowedMap).length > 0 ? allowedMap : undefined,
+                notes: allNotesData || []
+            })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+            saveToLocalBackup(sec);
+            showNotification('✅ ' + result.message, false);
+            if (typeof showAdminNotice === 'function') {
+                showAdminNotice('✅ Base de données enregistrée avec succès sur le disque !');
+            }
+        } else {
+            showNotification('❌ ' + (result.message || 'Erreur d\'enregistrement'), true);
+        }
+    } catch (err) {
+        console.error('Erreur sauvegarde manuelle:', err);
+        showNotification('❌ Erreur réseau lors de la sauvegarde.', true);
+    }
+}
+
 function saveToLocalBackup(section) {
     try {
         const sec = section || currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
@@ -406,6 +450,8 @@ function setupEventListeners() {
     });
     
     // Boutons d'action
+    const manualSaveBtn = document.getElementById("manualSaveDbBtn");
+    if (manualSaveBtn) manualSaveBtn.addEventListener("click", manualSaveDatabase);
     generateWordButton.addEventListener("click", generateWordFiles);
     generateExcelButton.addEventListener("click", generateExcelFile);
     logoutButton.addEventListener("click", handleLogout);
@@ -2523,6 +2569,9 @@ function bindAdminControlsOnce() {
     const closeBtn = document.getElementById('closeAdminModal');
     if (closeBtn) closeBtn.onclick = closeAdminModal;
 
+    const adminSaveBtn = document.getElementById('adminSaveDbBtn');
+    if (adminSaveBtn) adminSaveBtn.onclick = manualSaveDatabase;
+
     const resetBtn = document.getElementById('resetTeacherFormBtn');
     if (resetBtn) resetBtn.onclick = resetTeacherForm;
 
@@ -3579,6 +3628,7 @@ function appendClassToTeacher(className) {
 }
 
 // Exposer globalement pour inline onclick
+window.manualSaveDatabase = manualSaveDatabase;
 window.openAdminModal = openAdminModal;
 window.closeAdminModal = closeAdminModal;
 window.openRenameClassModal = openRenameClassModal;

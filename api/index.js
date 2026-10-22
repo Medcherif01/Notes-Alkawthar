@@ -328,7 +328,7 @@ function getSectionData(section = 'boys') {
 
     const subjectsByClass = buildSubjectsByClass(teacherPermissions, studentsByClass);
     const allClasses = [...new Set([...Object.keys(studentsByClass), ...Object.keys(subjectsByClass)])].sort();
-    const allSubjects = [...new Set(Object.values(subjectsByClass).flat())].sort();
+    const allSubjects = [...new Set([...Object.values(subjectsByClass).flat(), ...(dataSections.defaultSubjects || [])])].sort();
     
     return {
         allowedTeachers,
@@ -1792,6 +1792,56 @@ app.post('/api/sync-data', requireAuth, sectionMiddleware, (req, res) => {
     saveDatabaseToDisk();
     console.log(`✅ Base de données synchronisée et sauvegardée pour la section: ${sec}`);
     res.json({ success: true, message: 'Données synchronisées et persistées avec succès.' });
+});
+
+app.post('/api/save-database', requireAuth, sectionMiddleware, (req, res) => {
+    try {
+        const user = req.session.user;
+        const section = req.body.section || req.session?.section || req.headers['x-auth-section'] || 'boys';
+        const sec = (section === 'girls' || section === 'girls-section') ? 'girls' : 'boys';
+
+        if (req.body.studentsByClass && typeof req.body.studentsByClass === 'object') {
+            dbStorage[sec].studentsByClass = req.body.studentsByClass;
+        }
+        if (req.body.teacherPermissions && typeof req.body.teacherPermissions === 'object') {
+            dbStorage[sec].teacherPermissions = req.body.teacherPermissions;
+            dbStorage[sec].teacherPermissions["Mohamed"] = "admin";
+            if (sec === 'girls') dbStorage[sec].teacherPermissions["Zohra"] = "admin";
+        }
+        if (req.body.allowedTeachers && typeof req.body.allowedTeachers === 'object') {
+            dbStorage[sec].allowedTeachers = { ...(dbStorage[sec].allowedTeachers || {}), ...req.body.allowedTeachers };
+            dbStorage[sec].allowedTeachers["Mohamed"] = "Med120786";
+            if (sec === 'girls') dbStorage[sec].allowedTeachers["Zohra"] = "Zohra";
+        }
+        if (Array.isArray(req.body.notes)) {
+            req.body.notes.forEach(incoming => {
+                if (!incoming.class || !incoming.subject || !incoming.studentName) return;
+                const idx = inMemoryNotes.findIndex(n => 
+                    n.class === incoming.class &&
+                    String(n.subject || '').trim().toLowerCase() === String(incoming.subject || '').trim().toLowerCase() &&
+                    String(n.studentName || '').trim().toLowerCase() === String(incoming.studentName || '').trim().toLowerCase() &&
+                    n.semester === incoming.semester &&
+                    (n.section || 'boys') === (incoming.section || sec)
+                );
+                if (idx !== -1) {
+                    inMemoryNotes[idx] = { ...inMemoryNotes[idx], ...incoming, updatedAt: new Date() };
+                } else {
+                    inMemoryNotes.push({ ...incoming, _id: incoming._id || String(noteIdCounter++) });
+                }
+            });
+        }
+
+        saveDatabaseToDisk();
+        console.log(`💾 Base de données sauvegardée avec succès sur le disque (db_storage.json) pour section: ${sec}`);
+        res.json({
+            success: true,
+            message: 'La base de données a été enregistrée avec succès sur le disque ! Tous vos changements sont persistés.',
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Erreur lors de la sauvegarde de la base de données:', err);
+        res.status(500).json({ success: false, message: 'Erreur serveur lors de l\'enregistrement dans la base de données.' });
+    }
 });
 
 // Endpoint pour vider les cohortes de l'année précédente
