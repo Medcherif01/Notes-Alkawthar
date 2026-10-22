@@ -2252,7 +2252,7 @@ app.all('/generate-html-report', requireAuth, sectionMiddleware, async (req, res
         <div>
             <header class="school-header">
                 <div class="header-left">
-                    <img src="/logo.svg" alt="Al Kawthar" class="school-logo" onerror="this.style.display='none'">
+                    <img src="/assets/aistudio/Logo_ecole_86b17a54.png" alt="Al Kawthar International School Logo" class="school-logo">
                     <div class="school-title-group">
                         <h1>AL KAWTHAR INTERNATIONAL SCHOOL</h1>
                         <p>مدارس الكوثر العالمية — Système Officiel de Registre Académique</p>

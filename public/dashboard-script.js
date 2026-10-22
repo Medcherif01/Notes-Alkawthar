@@ -99,6 +99,289 @@ let currentStudentsList = [];
 let autoProgressEnabled = false;
 let isAdmin = false;
 let _suppressFilterChange = false; // évite les déclenchements de filterAndDisplayNotes lors des changements programmatiques
+let currentLang = localStorage.getItem('al_kawthar_lang') || 'fr';
+
+// ====================================
+// TRADUCTION & MULTILINGUE (I18N)
+// ====================================
+const I18N = {
+    fr: {
+        officialPortal: "Portail Académique Officiel",
+        connected: "Connecté",
+        langBtn: "🇬🇧 English",
+        saveDb: "Enregistrer la BDD",
+        myAssignments: "Mes Matières / Classes",
+        myProfile: "Mon Profil",
+        admin: "Administration",
+        reportPdf: "Bulletin PDF",
+        word: "Word",
+        excel: "Excel",
+        logout: "Déconnexion",
+        choosePeriod: "Choisissez la Période",
+        semester1: "Semestre 1",
+        dates1: "Septembre — Janvier",
+        semester2: "Semestre 2",
+        dates2: "Février — Juin",
+        gradeEntryTitle: "Saisie des Notes",
+        teacherInfo: "Enseignant :",
+        teacherBannerText: "Vous pouvez ajouter votre matière et les classes que vous enseignez pour pouvoir saisir vos notes.",
+        addAssignmentsBtn: "+ Mes Matières & Classes",
+        selectClassLabel: "Classe",
+        selectClassDefault: "— Sélectionner une classe —",
+        selectSubjectLabel: "Matière",
+        selectSubjectDefault: "— Sélectionner une matière —",
+        selectStudentLabel: "Élève",
+        selectStudentDefault: "— Sélectionner un élève —",
+        classwork: "Travaux Classe",
+        homework: "Devoirs",
+        assessment: "Évaluation",
+        exam: "Examen",
+        saveGradeBtn: "Enregistrer la Note",
+        nextStudent: "Prochain élève",
+        skip: "Passer",
+        searchFilters: "Filtres de Recherche",
+        allClasses: "Toutes les Classes",
+        allSubjects: "Toutes les Matières",
+        allStudents: "Tous les Élèves",
+        gradeRegistry: "Registre des Notes",
+        markAllEntered: "Tout Saisi",
+        markAllUnentered: "Tout Non Saisi",
+        approveAll: "Tout Approuvé",
+        unapproveAll: "Tout Désapprouvé",
+        thStudent: "Élève",
+        thTC: "TC",
+        thDev: "Dev",
+        thEval: "Eval",
+        thExam: "Exam",
+        thTotal: "Total",
+        thEntered: "Saisi",
+        thApproved: "Approuvé",
+        thActions: "Actions",
+        deleteBtn: "Supprimer",
+        saveAll: "Enregistrer tout",
+        dbConnected: "Base de données connectée",
+        chooseClassPrompt: "Choisissez une classe pour consulter les notes",
+        chooseSubjectPrompt: "Choisissez une matière",
+        allClassesBtn: "Toutes les classes",
+        completeSubject: "Complet",
+        readyToEnter: "Prêt à saisir",
+        noStudentsInClass: "Aucun élève inscrit dans cette classe.",
+        noSubjectsForClass: "Aucune matière disponible pour cette classe."
+    },
+    en: {
+        officialPortal: "Official Academic Portal",
+        connected: "Logged in",
+        langBtn: "🇫🇷 Français",
+        saveDb: "Save Database",
+        myAssignments: "My Subjects / Classes",
+        myProfile: "My Profile",
+        admin: "Administration",
+        reportPdf: "PDF Report",
+        word: "Word",
+        excel: "Excel",
+        logout: "Log Out",
+        choosePeriod: "Select Academic Period",
+        semester1: "Semester 1",
+        dates1: "September — January",
+        semester2: "Semester 2",
+        dates2: "February — June",
+        gradeEntryTitle: "Grade Entry",
+        teacherInfo: "Teacher:",
+        teacherBannerText: "You can add your subject and classes you teach to enter grades.",
+        addAssignmentsBtn: "+ My Subjects & Classes",
+        selectClassLabel: "Class",
+        selectClassDefault: "— Select a class —",
+        selectSubjectLabel: "Subject",
+        selectSubjectDefault: "— Select a subject —",
+        selectStudentLabel: "Student",
+        selectStudentDefault: "— Select a student —",
+        classwork: "Classwork",
+        homework: "Homework",
+        assessment: "Assessment",
+        exam: "Exam",
+        saveGradeBtn: "Save Grade",
+        nextStudent: "Next student",
+        skip: "Skip",
+        searchFilters: "Search Filters",
+        allClasses: "All Classes",
+        allSubjects: "All Subjects",
+        allStudents: "All Students",
+        gradeRegistry: "Grade Registry",
+        markAllEntered: "Mark All Entered",
+        markAllUnentered: "Mark All Unentered",
+        approveAll: "Approve All",
+        unapproveAll: "Unapprove All",
+        thStudent: "Student",
+        thTC: "Classwork",
+        thDev: "Homework",
+        thEval: "Assessment",
+        thExam: "Exam",
+        thTotal: "Total",
+        thEntered: "Entered",
+        thApproved: "Approved",
+        thActions: "Actions",
+        deleteBtn: "Delete",
+        saveAll: "Save All",
+        dbConnected: "Database Connected",
+        chooseClassPrompt: "Choose a class to view grades",
+        chooseSubjectPrompt: "Choose a subject",
+        allClassesBtn: "All classes",
+        completeSubject: "Complete",
+        readyToEnter: "Ready to enter",
+        noStudentsInClass: "No students enrolled in this class.",
+        noSubjectsForClass: "No subjects available for this class."
+    }
+};
+
+function autoDetectEnglishTeacher(data) {
+    if (!data) return false;
+    const uname = (data.username || '').toLowerCase();
+    if (uname.includes('anglais') || uname.includes('english')) return true;
+
+    const perms = data.permissions;
+    if (perms === 'admin') return false;
+
+    if (perms && typeof perms === 'object') {
+        if (Array.isArray(perms.subjects)) {
+            if (perms.subjects.some(s => String(s).toLowerCase().includes('anglais') || String(s).toLowerCase().includes('english'))) {
+                return true;
+            }
+        }
+    }
+    
+    if (data.subjectsByClass && typeof data.subjectsByClass === 'object') {
+        const allSubjects = Object.values(data.subjectsByClass).flat();
+        if (allSubjects.some(s => String(s).toLowerCase().includes('anglais') || String(s).toLowerCase().includes('english'))) {
+            if (perms && perms.subjects && Array.isArray(perms.subjects)) {
+                return perms.subjects.some(s => String(s).toLowerCase().includes('anglais') || String(s).toLowerCase().includes('english'));
+            }
+        }
+    }
+    return false;
+}
+
+function applyLanguage(lang) {
+    currentLang = lang || 'fr';
+    try { localStorage.setItem('al_kawthar_lang', currentLang); } catch (e) {}
+    const dict = I18N[currentLang] || I18N.fr;
+
+    // Header & Buttons
+    const dashSecName = document.getElementById('dashboardSectionName');
+    if (dashSecName) dashSecName.textContent = dict.officialPortal;
+
+    const userConnectLbl = document.getElementById('userConnectLabel');
+    if (userConnectLbl) userConnectLbl.textContent = dict.connected;
+
+    const langBtnTxt = document.getElementById('langBtnText');
+    if (langBtnTxt) langBtnTxt.textContent = dict.langBtn;
+
+    const txtSaveDb = document.getElementById('txtSaveDb');
+    if (txtSaveDb) txtSaveDb.textContent = dict.saveDb;
+
+    const txtAssign = document.getElementById('txtAssignments');
+    if (txtAssign) txtAssign.textContent = dict.myAssignments;
+
+    const txtProf = document.getElementById('txtProfile');
+    if (txtProf) txtProf.textContent = dict.myProfile;
+
+    const txtAdm = document.getElementById('txtAdmin');
+    if (txtAdm) txtAdm.textContent = dict.admin;
+
+    const txtRep = document.getElementById('txtReport');
+    if (txtRep) txtRep.textContent = dict.reportPdf;
+
+    const txtW = document.getElementById('txtWord');
+    if (txtW) txtW.textContent = dict.word;
+
+    const txtE = document.getElementById('txtExcel');
+    if (txtE) txtE.textContent = dict.excel;
+
+    const txtLog = document.getElementById('txtLogout');
+    if (txtLog) txtLog.textContent = dict.logout;
+
+    // Semester selector
+    const semHeader = document.querySelector('#semesterSelectorContainer .semester-header h3');
+    if (semHeader) semHeader.textContent = dict.choosePeriod;
+
+    const s1L = document.querySelector('#semester1Button .semester-label');
+    if (s1L) s1L.textContent = dict.semester1;
+
+    const s1D = document.querySelector('#semester1Button .semester-dates');
+    if (s1D) s1D.textContent = dict.dates1;
+
+    const s2L = document.querySelector('#semester2Button .semester-label');
+    if (s2L) s2L.textContent = dict.semester2;
+
+    const s2D = document.querySelector('#semester2Button .semester-dates');
+    if (s2D) s2D.textContent = dict.dates2;
+
+    // Form title & labels
+    const formTitleSpan = document.querySelector('#formTitle span:first-of-type');
+    if (formTitleSpan) formTitleSpan.textContent = dict.gradeEntryTitle;
+
+    const teacherBannerTextSpan = document.querySelector('#teacherAssignmentBanner > div > span');
+    if (teacherBannerTextSpan) {
+        teacherBannerTextSpan.innerHTML = `<strong>${dict.teacherInfo}</strong> ${dict.teacherBannerText}`;
+    }
+
+    const bannerOpenAssignSpan = document.querySelector('#bannerOpenAssignmentsBtn span');
+    if (bannerOpenAssignSpan) bannerOpenAssignSpan.textContent = dict.addAssignmentsBtn;
+
+    // Form labels
+    const classLbl = document.querySelector('label[for="class"]');
+    if (classLbl) classLbl.innerHTML = `<i class="fas fa-school"></i> ${dict.selectClassLabel}`;
+
+    const subjectLbl = document.querySelector('label[for="subject"]');
+    if (subjectLbl) subjectLbl.innerHTML = `<i class="fas fa-book"></i> ${dict.selectSubjectLabel}`;
+
+    const studentLbl = document.querySelector('label[for="studentName"]');
+    if (studentLbl) studentLbl.innerHTML = `<i class="fas fa-user-graduate"></i> ${dict.selectStudentLabel}`;
+
+    const tcLbl = document.querySelector('label[for="travauxClasse"]');
+    if (tcLbl) tcLbl.textContent = dict.classwork;
+
+    const devLbl = document.querySelector('label[for="devoirs"]');
+    if (devLbl) devLbl.textContent = dict.homework;
+
+    const evalLbl = document.querySelector('label[for="evaluation"]');
+    if (evalLbl) evalLbl.textContent = dict.assessment;
+
+    const examLbl = document.querySelector('label[for="examen"]');
+    if (examLbl) examLbl.textContent = dict.exam;
+
+    const submitBtnSpan = document.querySelector('.submit-btn span');
+    if (submitBtnSpan) submitBtnSpan.textContent = dict.saveGradeBtn;
+
+    const skipBtnSpan = document.querySelector('#skipToNextButton span');
+    if (skipBtnSpan) skipBtnSpan.textContent = dict.skip;
+
+    // Filter labels
+    const filtersHeader = document.querySelector('.filters-section .card-header h3 span');
+    if (filtersHeader) filtersHeader.textContent = dict.searchFilters;
+
+    const filterLabels = document.querySelectorAll('.filters-grid .filter-item label');
+    if (filterLabels.length >= 3) {
+        filterLabels[0].innerHTML = `<i class="fas fa-school"></i> ${dict.selectClassLabel}`;
+        filterLabels[1].innerHTML = `<i class="fas fa-book"></i> ${dict.selectSubjectLabel}`;
+        filterLabels[2].innerHTML = `<i class="fas fa-user-graduate"></i> ${dict.selectStudentLabel}`;
+    }
+
+    // Registry header & Bulk buttons
+    const registryHeader = document.querySelector('.table-section .card-header h3 span');
+    if (registryHeader) registryHeader.textContent = dict.gradeRegistry;
+
+    const setAllEnteredSpan = document.querySelector('#setAllEnteredButton span');
+    if (setAllEnteredSpan) setAllEnteredSpan.textContent = dict.markAllEntered;
+
+    const unsetAllEnteredSpan = document.querySelector('#unsetAllEnteredButton span');
+    if (unsetAllEnteredSpan) unsetAllEnteredSpan.textContent = dict.markAllUnentered;
+
+    const setAllApprovedSpan = document.querySelector('#setAllApprovedButton span');
+    if (setAllApprovedSpan) setAllApprovedSpan.textContent = dict.approveAll;
+
+    const unsetAllApprovedSpan = document.querySelector('#unsetAllApprovedButton span');
+    if (unsetAllApprovedSpan) unsetAllApprovedSpan.textContent = dict.unapproveAll;
+}
 
 // Éléments DOM
 const classSelect = document.getElementById("class");
@@ -343,6 +626,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         subjectsByClassGlobal = data.subjectsByClass;
         studentsByClassGlobal = data.studentsByClass;
         
+        // Auto-détection enseignant d'Anglais / Langue préférée
+        if (autoDetectEnglishTeacher(data) || localStorage.getItem('al_kawthar_lang') === 'en') {
+            currentLang = 'en';
+        } else {
+            currentLang = localStorage.getItem('al_kawthar_lang') || 'fr';
+        }
+        applyLanguage(currentLang);
+        
         // Synchronisation automatique intelligente avec la sauvegarde locale persistante
         await checkAndAutoSyncWithLocalBackup(data.section);
 
@@ -450,6 +741,21 @@ function setupEventListeners() {
     });
     
     // Boutons d'action
+    const langBtn = document.getElementById("languageToggleBtn");
+    if (langBtn) {
+        langBtn.addEventListener("click", () => {
+            currentLang = currentLang === 'fr' ? 'en' : 'fr';
+            applyLanguage(currentLang);
+            if (iconNavClass && iconNavSubject) {
+                displayNotesForSubject(iconNavClass, iconNavSubject);
+            } else if (iconNavClass) {
+                displaySubjectIcons(iconNavClass);
+            } else {
+                displayClassIcons();
+            }
+            showNotification(currentLang === 'en' ? '🇬🇧 Switched to English interface' : '🇫🇷 Interface passée en Français', false);
+        });
+    }
     const manualSaveBtn = document.getElementById("manualSaveDbBtn");
     if (manualSaveBtn) manualSaveBtn.addEventListener("click", manualSaveDatabase);
     generateWordButton.addEventListener("click", generateWordFiles);
@@ -1231,6 +1537,8 @@ function displayClassIcons() {
     iconNavClass   = null;
     iconNavSubject = null;
 
+    const dict = I18N[currentLang] || I18N.fr;
+
     // Synchroniser les selects filtres (reset silencieux — sans déclencher filterAndDisplayNotes)
     _suppressFilterChange = true;
     sortClassSelect.value   = '';
@@ -1244,7 +1552,7 @@ function displayClassIcons() {
     const classes = currentUserPermissions.classes;
 
     if (!classes || classes.length === 0) {
-        outputDiv.innerHTML = `<div class="icon-nav-empty"><i class="fas fa-exclamation-circle"></i><p>Aucune classe disponible.</p></div>`;
+        outputDiv.innerHTML = `<div class="icon-nav-empty"><i class="fas fa-exclamation-circle"></i><p>${dict.noStudentsInClass}</p></div>`;
         return;
     }
 
@@ -1252,7 +1560,7 @@ function displayClassIcons() {
         <div class="icon-nav-wrapper">
             <div class="icon-nav-header">
                 <i class="fas fa-school"></i>
-                <span>Choisissez une classe pour consulter les notes</span>
+                <span>${dict.chooseClassPrompt}</span>
             </div>
             <div class="icon-nav-grid icon-nav-classes">
     `;
@@ -1260,7 +1568,7 @@ function displayClassIcons() {
     classes.forEach(cls => {
         const v = getClassVisual(cls);
         html += `
-            <div class="icon-nav-card class-card" onclick="displaySubjectIcons('${cls}')" title="Classe ${cls}">
+            <div class="icon-nav-card class-card" onclick="displaySubjectIcons('${cls}')" title="Class ${cls}">
                 <div class="icon-nav-bubble" style="background:${v.gradient};">
                     <i class="fas ${v.icon}"></i>
                 </div>
@@ -1279,6 +1587,8 @@ function displayClassIcons() {
 function displaySubjectIcons(className) {
     iconNavClass   = className;
     iconNavSubject = null;
+
+    const dict = I18N[currentLang] || I18N.fr;
 
     // Synchroniser les selects filtres silencieusement
     _suppressFilterChange = true;
@@ -1300,7 +1610,7 @@ function displaySubjectIcons(className) {
         <div class="icon-nav-wrapper">
             <div class="icon-nav-breadcrumb">
                 <button class="icon-nav-back" onclick="displayClassIcons()">
-                    <i class="fas fa-arrow-left"></i> Toutes les classes
+                    <i class="fas fa-arrow-left"></i> ${dict.allClassesBtn}
                 </button>
                 <span class="breadcrumb-sep"><i class="fas fa-chevron-right"></i></span>
                 <span class="breadcrumb-current" style="background:${cv.gradient};">
@@ -1309,13 +1619,13 @@ function displaySubjectIcons(className) {
             </div>
             <div class="icon-nav-header">
                 <i class="fas fa-book"></i>
-                <span>Choisissez une matière</span>
+                <span>${dict.chooseSubjectPrompt}</span>
             </div>
             <div class="icon-nav-grid icon-nav-subjects">
     `;
 
     if (subjects.length === 0) {
-        html += `<div class="icon-nav-empty-inline"><i class="fas fa-info-circle"></i> Aucune matière disponible pour cette classe.</div>`;
+        html += `<div class="icon-nav-empty-inline"><i class="fas fa-info-circle"></i> ${dict.noSubjectsForClass}</div>`;
     } else {
         const students = studentsByClassGlobal[className] || [];
         subjects.forEach(subject => {
@@ -1327,7 +1637,7 @@ function displaySubjectIcons(className) {
                     <div class="icon-nav-bubble subject-bubble" style="background: linear-gradient(135deg, ${sv.color}cc, ${sv.color});">
                         <i class="fas ${sv.icon}"></i>
                     </div>
-                    ${isComplete ? '<div class="complete-badge"><i class="fas fa-check-circle"></i> Complet</div>' : ''}
+                    ${isComplete ? `<div class="complete-badge"><i class="fas fa-check-circle"></i> ${dict.completeSubject}</div>` : ''}
                     <span class="icon-nav-label subject-label" title="${subject}">${subject}</span>
                 </div>
             `;
@@ -1364,6 +1674,8 @@ function displayNotesForSubject(className, subject) {
     iconNavClass   = className;
     iconNavSubject = subject;
 
+    const dict = I18N[currentLang] || I18N.fr;
+
     // Synchroniser les selects filtres silencieusement
     _suppressFilterChange = true;
     sortClassSelect.value   = className;
@@ -1397,7 +1709,7 @@ function displayNotesForSubject(className, subject) {
         <div class="icon-nav-table-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.2rem;">
             <div class="icon-nav-breadcrumb" style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;">
                 <button class="icon-nav-back" onclick="displayClassIcons()">
-                    <i class="fas fa-arrow-left"></i> Classes
+                    <i class="fas fa-arrow-left"></i> ${dict.allClassesBtn}
                 </button>
                 <span class="breadcrumb-sep"><i class="fas fa-chevron-right"></i></span>
                 <button class="icon-nav-back-subject" onclick="displaySubjectIcons('${className}')">
@@ -1407,14 +1719,14 @@ function displayNotesForSubject(className, subject) {
                 <span class="breadcrumb-current subject-crumb" style="background: linear-gradient(135deg, ${sv.color}bb, ${sv.color});">
                     <i class="fas ${sv.icon}"></i> ${subject}
                 </span>
-                ${complete ? '<span class="breadcrumb-complete"><i class="fas fa-check-circle"></i> Matière complète</span>' : ''}
+                ${complete ? `<span class="breadcrumb-complete"><i class="fas fa-check-circle"></i> ${dict.completeSubject}</span>` : ''}
             </div>
             <div style="display:flex;align-items:center;gap:0.75rem;">
                 <span style="font-size:0.78rem;font-weight:600;padding:0.4rem 0.85rem;border-radius:99px;background:#ECFDF5;color:#059669;border:1px solid #A7F3D0;display:inline-flex;align-items:center;gap:0.4rem;">
-                    <i class="fas fa-database"></i> <span>Base de données connectée</span>
+                    <i class="fas fa-database"></i> <span>${dict.dbConnected}</span>
                 </span>
                 <button type="button" onclick="saveAllTableNotes('${className}', '${subject.replace(/'/g, "\\'")}')" class="admin-btn-secondary" style="font-size:0.82rem;font-weight:700;padding:0.45rem 1rem;border-radius:10px;background:#4F46E5;color:white;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:0.45rem;box-shadow:0 2px 8px rgba(79,70,229,0.3);transition:all 0.2s;">
-                    <i class="fas fa-save"></i> <span>Enregistrer tout</span>
+                    <i class="fas fa-save"></i> <span>${dict.saveAll}</span>
                 </button>
             </div>
         </div>
@@ -1423,7 +1735,7 @@ function displayNotesForSubject(className, subject) {
     outputDiv.innerHTML = html;
 
     if (students.length === 0) {
-        outputDiv.innerHTML += `<div class="icon-nav-no-notes"><i class="fas fa-inbox"></i><p>Aucun élève inscrit dans cette classe.</p></div>`;
+        outputDiv.innerHTML += `<div class="icon-nav-no-notes"><i class="fas fa-inbox"></i><p>${dict.noStudentsInClass}</p></div>`;
         currentlyDisplayedNotes = [];
         updateBulkActionsVisibility();
         return;
@@ -1466,19 +1778,21 @@ function displayNotesTableInto(notes, container) {
     currentlyDisplayedNotes = notes;
     updateBulkActionsVisibility();
 
+    const dict = I18N[currentLang] || I18N.fr;
+
     let tableHTML = `
         <table>
             <thead>
                 <tr>
-                    <th>Élève</th>
-                    <th>TC</th>
-                    <th>Dev</th>
-                    <th>Eval</th>
-                    <th>Exam</th>
-                    <th>Total</th>
-                    <th>Saisi</th>
-                    ${isAdmin ? '<th>Approuvé</th>' : ''}
-                    <th>Actions</th>
+                    <th>${dict.thStudent}</th>
+                    <th>${dict.thTC}</th>
+                    <th>${dict.thDev}</th>
+                    <th>${dict.thEval}</th>
+                    <th>${dict.thExam}</th>
+                    <th>${dict.thTotal}</th>
+                    <th>${dict.thEntered}</th>
+                    ${isAdmin ? `<th>${dict.thApproved}</th>` : ''}
+                    <th>${dict.thActions}</th>
                 </tr>
             </thead>
             <tbody>
@@ -1535,9 +1849,9 @@ function displayNotesTableInto(notes, container) {
                 <td>
                     ${note._id ? `
                         <button onclick="deleteNote('${note._id}')" class="delete-btn-inline">
-                            <i class="fas fa-trash"></i> Supprimer
+                            <i class="fas fa-trash"></i> ${dict.deleteBtn}
                         </button>
-                    ` : '<span style="color:#94a3b8;font-size:0.8rem;">Prêt à saisir</span>'}
+                    ` : `<span style="color:#94a3b8;font-size:0.8rem;">${dict.readyToEnter}</span>`}
                 </td>
             </tr>
         `;

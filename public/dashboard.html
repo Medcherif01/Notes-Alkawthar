@@ -30,16 +30,16 @@
     <header class="modern-header">
         <div class="header-left">
             <div class="logo-section">
-                <img src="https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552"
-                     alt="Logo" class="header-logo">
+                <img src="/assets/aistudio/Logo_ecole_86b17a54.png"
+                     alt="Al Kawthar International School Logo" class="header-logo">
                 <div class="title-section">
-                    <h1 class="main-title">
+                    <h1 class="main-title" id="headerMainTitle">
                         <i class="fas fa-graduation-cap"></i>
-                        Gestion des Notes
+                        Al Kawthar International School
                     </h1>
                     <div class="section-badge-header" id="sectionIndicator">
-                        <i class="fas fa-circle" style="font-size:0.55rem;"></i>
-                        <span id="dashboardSectionName">Chargement...</span>
+                        <i class="fas fa-university" style="font-size:0.65rem;"></i>
+                        <span id="dashboardSectionName">Portail Académique Officiel</span>
                     </div>
                 </div>
             </div>
@@ -49,42 +49,46 @@
             <div class="user-card">
                 <i class="fas fa-user-circle"></i>
                 <div class="user-details">
-                    <span class="user-label">Connecté</span>
+                    <span class="user-label" id="userConnectLabel">Connecté</span>
                     <strong id="usernameDisplay" class="user-name">...</strong>
                 </div>
             </div>
             <div class="action-buttons">
+                <button id="languageToggleBtn" class="action-btn" style="background: rgba(255,255,255,0.22); color: white; font-weight: 700; border: 1px solid rgba(255,255,255,0.3);" title="Switch Language / Changer la langue">
+                    <i class="fas fa-language"></i>
+                    <span id="langBtnText">🇬🇧 English</span>
+                </button>
                 <button id="manualSaveDbBtn" class="action-btn" style="background: linear-gradient(135deg, #059669, #10B981); color: white; font-weight: 700; box-shadow: 0 3px 10px rgba(16,185,129,0.35);" title="Enregistrer immédiatement la Base de Données">
                     <i class="fas fa-database"></i>
-                    <span>Enregistrer la BDD</span>
+                    <span id="txtSaveDb">Enregistrer la BDD</span>
                 </button>
                 <button id="openTeacherAssignmentsBtn" class="action-btn assignment-btn" title="Mes matières & classes enseignées">
                     <i class="fas fa-book-reader"></i>
-                    <span>Mes Matières / Classes</span>
+                    <span id="txtAssignments">Mes Matières / Classes</span>
                 </button>
                 <button id="openProfileModalBtn" class="action-btn profile-btn" title="Modifier mon login et mot de passe">
                     <i class="fas fa-user-cog"></i>
-                    <span>Mon Profil</span>
+                    <span id="txtProfile">Mon Profil</span>
                 </button>
                 <button id="openAdminModalBtn" class="action-btn admin-btn" title="Administration de l'école">
                     <i class="fas fa-user-shield"></i>
-                    <span>Administration</span>
+                    <span id="txtAdmin">Administration</span>
                 </button>
                 <button id="openReportModalBtn" class="action-btn report-btn" title="Générer Bulletin Officiel (A4 PDF)">
                     <i class="fas fa-print"></i>
-                    <span>Bulletin PDF</span>
+                    <span id="txtReport">Bulletin PDF</span>
                 </button>
                 <button id="generateWordButton" class="action-btn word-btn" title="Générer Word">
                     <i class="fas fa-file-word"></i>
-                    <span>Word</span>
+                    <span id="txtWord">Word</span>
                 </button>
                 <button id="generateExcelButton" class="action-btn excel-btn" title="Générer Excel">
                     <i class="fas fa-file-excel"></i>
-                    <span>Excel</span>
+                    <span id="txtExcel">Excel</span>
                 </button>
                 <button id="logoutButton" class="action-btn logout-btn" title="Se déconnecter">
                     <i class="fas fa-sign-out-alt"></i>
-                    <span>Déconnexion</span>
+                    <span id="txtLogout">Déconnexion</span>
                 </button>
             </div>
         </div>

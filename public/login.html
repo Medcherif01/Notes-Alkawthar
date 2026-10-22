@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connexion Portail — Al Kawthar Notes</title>
-    <meta name="description" content="Application de gestion de notes - Dual Section (Garçons/Filles)">
-    <meta property="og:title" content="Connexion Portail — Al Kawthar Notes">
-    <meta property="og:description" content="Application de gestion de notes - Dual Section (Garçons/Filles)">
+    <title>Connexion Portail — Al Kawthar International School</title>
+    <meta name="description" content="Connexion Portail — Al Kawthar International School">
+    <meta property="og:title" content="Connexion Portail — Al Kawthar International School">
+    <meta property="og:description" content="Connexion Portail — Al Kawthar International School">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
@@ -15,25 +15,26 @@
 </head>
 <body class="login-page">
 
-    <div class="login-container">
+    <div class="login-container" style="max-width: 440px; padding: 2.2rem;">
         <a href="/home.html" class="back-link">
-            <i class="fas fa-arrow-left"></i> Retour
+            <i class="fas fa-arrow-left"></i> Accueil / Home
         </a>
 
-        <img src="/logo.svg" onerror="this.onerror=null;this.src='https://cdn.glitch.global/f566aaa0-dea8-4ebc-bb3a-23070b8c7e7a/al-kawthar-international-schools-jeddah-saudi-arabia-modified.png?v=1739958835552';"
-             alt="Logo Al Kawthar">
+        <img src="/assets/aistudio/Logo_ecole_86b17a54.png"
+             alt="Logo Al Kawthar International School"
+             style="width: 110px; height: 110px; object-fit: contain; margin: 0.5rem auto 1rem auto; display: block; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15));">
 
-        <div class="section-badge" id="sectionBadge">
-            <i class="fas fa-graduation-cap"></i>
-            <span id="sectionName">Section</span>
-        </div>
-
-        <h2>Connexion Portail</h2>
+        <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.2rem;">
+            Connexion Portail
+        </h2>
+        <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+            Al Kawthar International School
+        </p>
 
         <form id="loginForm">
             <div class="input-group">
                 <label for="username">
-                    <i class="fas fa-user"></i> Identifiant
+                    <i class="fas fa-user"></i> Identifiant / Username
                 </label>
                 <input type="text" id="username" name="username" required
                        autocomplete="username" placeholder="Entrez votre identifiant">
@@ -41,7 +42,7 @@
 
             <div class="input-group">
                 <label for="password">
-                    <i class="fas fa-lock"></i> Mot de passe
+                    <i class="fas fa-lock"></i> Mot de passe / Password
                 </label>
                 <input type="password" id="password" name="password" required
                        autocomplete="current-password" placeholder="Entrez votre mot de passe">
@@ -55,29 +56,16 @@
                 </label>
             </div>
 
-            <button type="submit" class="login-btn" id="submitBtn">
+            <button type="submit" class="login-btn" id="submitBtn" style="padding: 0.85rem; font-size: 0.95rem; border-radius: 10px;">
                 <i class="fas fa-sign-in-alt"></i>
-                <span>Se Connecter</span>
+                <span>Se Connecter / Log In</span>
             </button>
-
 
             <p id="errorMessage" class="error-message"></p>
         </form>
     </div>
 
     <script>
-        // ---- Section ----
-        const urlParams = new URLSearchParams(window.location.search);
-        const section   = urlParams.get('section') || 'boys';
-
-        if (section === 'girls') {
-            document.body.classList.add('girls-section');
-            document.getElementById('sectionName').textContent = 'Section Filles';
-        } else {
-            document.body.classList.add('boys-section');
-            document.getElementById('sectionName').textContent = 'Section Garçons';
-        }
-
         // ---- Toggle password ----
         document.getElementById('togglePassword').addEventListener('click', function () {
             const pwd  = document.getElementById('password');
@@ -86,7 +74,6 @@
             this.classList.toggle('fa-eye-slash', show);
             this.classList.toggle('fa-eye', !show);
         });
-
 
         // ---- Formulaire login ----
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -97,7 +84,6 @@
             const btn      = document.getElementById('submitBtn');
             const errEl    = document.getElementById('errorMessage');
 
-            // État chargement
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Connexion...</span>';
             errEl.classList.remove('show');
@@ -106,30 +92,30 @@
                 const response = await fetch('/login', {
                     method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ username, password, section })
+                    body:    JSON.stringify({ username, password, section: 'boys' })
                 });
 
                 if (response.ok) {
                     try {
                         localStorage.setItem('al_kawthar_user', username);
-                        localStorage.setItem('al_kawthar_section', section);
+                        localStorage.setItem('al_kawthar_section', 'boys');
                     } catch (storageErr) {}
                     btn.innerHTML = '<i class="fas fa-check"></i> <span>Connecté !</span>';
                     btn.style.background = 'linear-gradient(135deg,#2E7D32,#43A047)';
                     setTimeout(() => {
                         window.location.href = '/dashboard.html';
-                    }, 500);
+                    }, 400);
                 } else {
                     errEl.textContent = '⚠ Identifiant ou mot de passe incorrect.';
                     errEl.classList.add('show');
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> <span>Se Connecter</span>';
+                    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> <span>Se Connecter / Log In</span>';
                 }
             } catch {
-                errEl.textContent = '⚠ Erreur de connexion. Vérifiez votre connexion internet.';
+                errEl.textContent = '⚠ Erreur de connexion. Vérifiez votre réseau.';
                 errEl.classList.add('show');
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> <span>Se Connecter</span>';
+                btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> <span>Se Connecter / Log In</span>';
             }
         });
     </script>
