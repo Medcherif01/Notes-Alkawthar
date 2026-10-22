@@ -148,31 +148,14 @@ function saveToLocalBackup(section) {
         const sec = section || currentUserData?.section || localStorage.getItem('al_kawthar_section') || 'boys';
         const key = `al_kawthar_persistent_backup_${sec}`;
         
-        let existingNotes = [];
         let existingTeachers = [];
         try {
             const raw = localStorage.getItem(key);
             if (raw) {
                 const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed.notes)) existingNotes = parsed.notes;
                 if (Array.isArray(parsed.teachers)) existingTeachers = parsed.teachers;
             }
         } catch (e) {}
-
-        // Fusion intelligente des notes : ne jamais écraser une liste remplie par une liste vide !
-        let mergedNotes = existingNotes;
-        if (allNotesData && allNotesData.length > 0) {
-            const noteMap = new Map();
-            existingNotes.forEach(n => {
-                const k = `${n.class}_${n.subject}_${n.studentName}_${n.semester}`.toLowerCase();
-                noteMap.set(k, n);
-            });
-            allNotesData.forEach(n => {
-                const k = `${n.class}_${n.subject}_${n.studentName}_${n.semester}`.toLowerCase();
-                noteMap.set(k, n);
-            });
-            mergedNotes = Array.from(noteMap.values());
-        }
 
         const teachersToSave = (adminTeachersCache && adminTeachersCache.length > 0) ? adminTeachersCache : existingTeachers;
 
@@ -182,10 +165,10 @@ function saveToLocalBackup(section) {
             section: sec,
             studentsByClass: JSON.parse(JSON.stringify(studentsByClassGlobal || {})),
             teachers: teachersToSave,
-            notes: mergedNotes
+            notes: (allNotesData && Array.isArray(allNotesData)) ? JSON.parse(JSON.stringify(allNotesData)) : []
         };
         localStorage.setItem(key, JSON.stringify(backupData));
-        console.log(`💾 Sauvegarde locale persistante mise à jour pour section: ${sec} (${mergedNotes.length} notes, ${Object.keys(studentsByClassGlobal || {}).length} classes)`);
+        console.log(`💾 Sauvegarde locale persistante mise à jour pour section: ${sec} (${backupData.notes.length} notes, ${Object.keys(studentsByClassGlobal || {}).length} classes)`);
     } catch (e) {
         console.warn('Erreur sauvegarde locale:', e);
     }
@@ -200,12 +183,11 @@ async function checkAndAutoSyncWithLocalBackup(section) {
         const backup = JSON.parse(raw);
         if (!backup || !backup.studentsByClass) return;
 
-        const backupClasses = Object.keys(backup.studentsByClass || {});
+        // Ne synchroniser vers le serveur que si le serveur est complètement vide / non initialisé
+        const serverClassesCount = Object.keys(studentsByClassGlobal || {}).length;
 
-        const hasCustomData = backup.userModified === true || backupClasses.length > 0;
-
-        if (hasCustomData) {
-            console.log('🔄 Restauration automatique des données depuis le stockage persistant...');
+        if (serverClassesCount === 0 && backup.userModified === true) {
+            console.log('🔄 Restauration automatique des données depuis le stockage persistant local...');
             const teacherPerms = {};
             const allowedMap = {};
             if (Array.isArray(backup.teachers)) {
@@ -237,10 +219,6 @@ async function checkAndAutoSyncWithLocalBackup(section) {
                     subjectsByClassGlobal = d.subjectsByClass;
                     studentsByClassGlobal = d.studentsByClass;
                     populatePermissionBasedDropdowns();
-                }
-            } else {
-                if (backup.studentsByClass && Object.keys(backup.studentsByClass).length > 0) {
-                    studentsByClassGlobal = backup.studentsByClass;
                 }
             }
         }
